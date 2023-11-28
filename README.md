@@ -3,7 +3,10 @@ Project of Multimodal Learning (PKU 2023 Autumn)
 
 This project is based on [Grounded-Diffusion](https://github.com/Lipurple/Grounded-Diffusion)
 
+TODO List：
 
+
+# Grounded-Diffusion
 ## Requirements
 A suitable [conda](https://conda.io/) environment named `grounded-diffusion` can be created
 and activated with:
