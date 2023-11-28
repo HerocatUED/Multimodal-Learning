@@ -4,7 +4,11 @@ Project of Multimodal Learning (PKU 2023 Autumn)
 This project is based on [Grounded-Diffusion](https://github.com/Lipurple/Grounded-Diffusion)
 
 TODO List：
-
+- [] Reproduce
+- [] Try stable diffusion UI
+- [] Try open-vocabulary pretrained word embedding rather than CLIP
+- [] Modify fusion module with advanced techniques
+- [] Optional: Try segment a given image rather than segment generated images. 
 
 # Grounded-Diffusion
 ## Requirements
