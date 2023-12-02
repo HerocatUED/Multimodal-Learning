@@ -1,4 +1,7 @@
 #! /bin/bash
+conda create -n mml python==3.8.5
+conda activate mml
+# conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
 pip install -r requirements.txt
 makedir src
 cd src
