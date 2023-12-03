@@ -6,23 +6,23 @@ conda activate mml
 pip install -r requirements.txt
 
 # other modules from Github
-makedir src
+mkdir src
 cd src
 
 # CLIP
-git clone git@github.com:openai/CLIP.git
+git clone https://github.com/openai/CLIP.git
 cd CLIP
 pip install -e .
 cd ..
 
 # mmtrack
-git clone git@github.com:open-mmlab/mmtracking.git
+git clone https://github.com/open-mmlab/mmtracking.git
 cd mmtracking
 pip install -e .
 cd ..
 
 # mmdetection
-git clone git@github.com:open-mmlab/mmdetection.git
+git clone https://github.com/open-mmlab/mmdetection.git
 cd mmdetection
 pip install -e .
 cd ..
