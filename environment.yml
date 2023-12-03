@@ -1,4 +1,4 @@
-name: grounded-diffusion
+name: train
 channels:
   - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/pytorch
   - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main
@@ -16,7 +16,7 @@ dependencies:
   - cffi #=1.15.1=py38h74dc2b5_0
   - cryptography #=37.0.1=py38h9ce1e76_0
   - cudatoolkit=11.3
-  - detectron2
+#  - detectron2
   - ffmpeg #=4.3=hf484d3e_0
   - freetype #=2.11.0=h70c0345_0
   - giflib #=5.2.1=h7b6447c_0
@@ -184,7 +184,7 @@ dependencies:
     - oauthlib==3.2.1
     - omegaconf==2.2.3
     - onnx==1.12.0
-    - onnxruntime==1.12.1
+    - onnxruntime #==1.12.1
     - opencv-python #==4.1.2.30
     - openmim==0.3.3
     - ordered-set==4.1.0

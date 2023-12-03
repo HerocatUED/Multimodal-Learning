@@ -26,3 +26,9 @@ git clone https://github.com/open-mmlab/mmdetection.git
 cd mmdetection
 pip install -e .
 cd ..
+
+# taming transformer
+git clone https://github.com/CompVis/taming-transformers
+cd taming-transformers
+pip install -e .
+cd ..
