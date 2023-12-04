@@ -7,7 +7,7 @@ regex
 tqdm
 
 # mmdetection requirements
-mmcv<=1.5.0
+openmim
 cython
 numpy>=1.19.2
 cityscapesscripts

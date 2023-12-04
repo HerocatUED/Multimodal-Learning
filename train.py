@@ -288,7 +288,7 @@ def main():
         count+=1
     print("class_coco=",class_coco)
     
-    pascal_file="VOC/class_split"+str(opt.class_split)+".csv"
+    pascal_file="./VOC/class_split"+str(opt.class_split)+".csv"
     
     class_total=[]
     f=open(pascal_file,"r")

@@ -10,6 +10,10 @@ TODO List：
 - [ ] Modify fusion module with advanced techniques
 - [ ] Optional: Try segment a given image rather than segment generated images. 
 
+## Requirements
+1. run `env.bash` under root dir
+2. Make sure you have access to hugging face or download "openai/clip-vit-large-patch14" under root dir
+
 ## Model Zoo
 
 https://drive.google.com/drive/folders/1HlagN6jVhmC_UbrOAy133LkN4Qgf2Scv?usp=sharing
