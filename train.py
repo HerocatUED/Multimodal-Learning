@@ -271,7 +271,7 @@ def main():
     seed_everything(opt.seed)
 
     class_coco={}
-    f=open("mmdetection/demo/coco_80_class.txt","r")
+    f=open("data/coco_80_class.txt","r")
     count=0
     for line in f.readlines():
         c_name=line.split("\n")[0]

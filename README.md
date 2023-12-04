@@ -10,15 +10,9 @@ TODO List：
 - [ ] Modify fusion module with advanced techniques
 - [ ] Optional: Try segment a given image rather than segment generated images. 
 
-# Grounded-Diffusion
 ## Requirements
-A suitable [conda](https://conda.io/) environment named `grounded-diffusion` can be created
-and activated with:
-
-```
-conda env create -f environment.yaml
-conda activate grounded-diffusion
-```
+1. run `env.bash` under root dir
+2. Make sure you have access to hugging face or download "openai/clip-vit-large-patch14" under root dir
 
 ## Model Zoo
 
