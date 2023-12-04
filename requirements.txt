@@ -9,7 +9,7 @@ tqdm
 # mmdetection requirements
 openmim
 cython
-numpy==1.19.2
+numpy>=1.19.2
 cityscapesscripts
 imagecorruptions
 scipy
@@ -50,3 +50,4 @@ transformers #==4.3.1
 # ldm 
 black
 kornia
+pyparsing
