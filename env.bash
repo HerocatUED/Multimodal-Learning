@@ -5,8 +5,6 @@ conda activate mml
 # conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
 pip install -r requirements.txt
 
-cp -p coco_80_class.txt src/mmdetection/demo/
-
 # other modules from Github
 mkdir src
 cd src

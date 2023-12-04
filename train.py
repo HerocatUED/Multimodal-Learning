@@ -3,27 +3,20 @@ import warnings
 from pytorch_lightning import seed_everything
 warnings.filterwarnings("ignore")
 import argparse, os
-print("here0")
 import PIL
-print("here1")
 import torch
-print("here2")
 from datetime import datetime
-print("here3")
 
 import torch.nn as nn
 import numpy as np
 from omegaconf import OmegaConf
-print("here4")
 from PIL import Image
 from tqdm import tqdm, trange
 from itertools import islice
-print("here5")
 from einops import rearrange
 import torchvision
 import random
 from ldm.util import instantiate_from_config
-print("here6")
 from ldm.models.diffusion.ddim import DDIMSampler
 import torch.optim as optim
 from ldm.modules.diffusionmodules.openaimodel import clear_feature_dic,get_feature_dic
@@ -276,12 +269,10 @@ def main():
     
     opt = parser.parse_args()
     seed_everything(opt.seed)
-    print("here")
 
     class_coco={}
-    f=open("src/mmdetection/demo/coco_80_class.txt","r")
+    f=open("./data/coco_80_class.txt","r")
     count=0
-    print("here")
     for line in f.readlines():
         c_name=line.split("\n")[0]
         class_coco[c_name]=count
@@ -303,8 +294,8 @@ def main():
     print("class_test=",class_test)
     config = OmegaConf.load(f"{opt.config}")
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    config_file = 'src/mmdetection/configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py'
-    checkpoint_file = 'src/mmdetection/checkpoint/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco_20210903_104808-b92c91f1.pth'
+    config_file = './src/mmdetection/configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py'
+    checkpoint_file = './checkpoint/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco_20210903_104808-b92c91f1.pth'
 
     pretrain_detector = init_detector(config_file, checkpoint_file, device=device)
     starttime = datetime.now()
@@ -524,5 +515,4 @@ def main():
             torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_'+str(j)+'.pth'))  
         
 if __name__ == "__main__":
-    print("here")
     main()
