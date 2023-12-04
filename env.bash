@@ -34,3 +34,6 @@ git clone https://github.com/open-mmlab/mmtracking.git
 cd mmtracking
 pip install -e .
 cd ..
+
+# move configs
+cp -rp ./configs/mmdetection/swin/ ./src/mmdetection/configs/
