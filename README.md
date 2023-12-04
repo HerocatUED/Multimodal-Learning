@@ -10,16 +10,6 @@ TODO List：
 - [ ] Modify fusion module with advanced techniques
 - [ ] Optional: Try segment a given image rather than segment generated images. 
 
-# Grounded-Diffusion
-## Requirements
-A suitable [conda](https://conda.io/) environment named `grounded-diffusion` can be created
-and activated with:
-
-```
-conda env create -f environment.yaml
-conda activate grounded-diffusion
-```
-
 ## Model Zoo
 
 https://drive.google.com/drive/folders/1HlagN6jVhmC_UbrOAy133LkN4Qgf2Scv?usp=sharing
