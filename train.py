@@ -271,7 +271,7 @@ def main():
     seed_everything(opt.seed)
 
     class_coco={}
-    f=open("data/coco_80_class.txt","r")
+    f=open("./data/coco_80_class.txt","r")
     count=0
     for line in f.readlines():
         c_name=line.split("\n")[0]
@@ -279,7 +279,7 @@ def main():
         count+=1
     print("class_coco=",class_coco)
     
-    pascal_file="VOC/class_split"+str(opt.class_split)+".csv"
+    pascal_file="./VOC/class_split"+str(opt.class_split)+".csv"
     
     class_total=[]
     f=open(pascal_file,"r")
@@ -294,8 +294,8 @@ def main():
     print("class_test=",class_test)
     config = OmegaConf.load(f"{opt.config}")
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    config_file = 'mmdetection/configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py'
-    checkpoint_file = 'mmdetection/checkpoint/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco_20210903_104808-b92c91f1.pth'
+    config_file = './src/mmdetection/configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py'
+    checkpoint_file = './checkpoint/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco_20210903_104808-b92c91f1.pth'
 
     pretrain_detector = init_detector(config_file, checkpoint_file, device=device)
     starttime = datetime.now()
