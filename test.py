@@ -111,7 +111,121 @@ def plot_mask(img, masks, colors=None, alpha=0.8,indexlist=[0,1]) -> np.ndarray:
         count+=1
     return img.astype(np.uint8)
 
-def main():
+def main(opt):
+
+    if opt.laion400m:
+        print("Falling back to LAION 400M model...")
+        opt.config = "configs/latent-diffusion/txt2img-1p4B-eval.yaml"
+        opt.ckpt = "models/ldm/text2img-large/model.ckpt"
+        opt.outdir = "outputs/txt2img-samples-laion400m"
+
+    seed_everything(opt.seed)
+    
+    tic = time.time()
+    config = OmegaConf.load(f"{opt.config}")
+    model = load_model_from_config(config, f"{opt.sd_ckpt}")
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    model = model.to(device)
+    toc = time.time()
+    seg_module=Segmodule().to(device)
+        
+    seg_module.load_state_dict(torch.load(opt.grounding_ckpt, map_location="cpu"), strict=True)
+    print('load time:',toc-tic)
+    sampler = DDIMSampler(model)
+
+    os.makedirs(opt.outdir, exist_ok=True)
+    outpath = opt.outdir
+    batch_size = opt.n_samples
+    precision_scope = autocast if opt.precision=="autocast" else nullcontext
+    with torch.no_grad():
+        with precision_scope("cuda"):
+            with model.ema_scope():
+                prompt = opt.prompt
+                text = opt.category
+                trainclass = text
+                if not opt.from_file:
+                    assert prompt is not None
+                    data = [batch_size * [prompt]]
+
+                else:
+                    print(f"reading prompts from {opt.from_file}")
+                    with open(opt.from_file, "r") as f:
+                        data = f.read().splitlines()
+                        data = list(chunk(data, batch_size))
+
+                sample_path = os.path.join(outpath, "samples")
+                os.makedirs(sample_path, exist_ok=True)
+
+                start_code = None
+                if opt.fixed_code:
+                    print('start_code')
+                    start_code = torch.randn([opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
+                for n in trange(opt.n_iter, desc="Sampling"):
+                    for prompts in tqdm(data, desc="data"):
+                        clear_feature_dic()
+                        uc = None
+                        if opt.scale != 1.0:
+                            uc = model.get_learned_conditioning(batch_size * [""])
+                        if isinstance(prompts, tuple):
+                            prompts = list(prompts)
+                        
+                        c = model.get_learned_conditioning(prompts)
+                        shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
+                        samples_ddim,_, _ = sampler.sample(S=opt.ddim_steps,
+                                                        conditioning=c,
+                                                        batch_size=opt.n_samples,
+                                                        shape=shape,
+                                                        verbose=False,
+                                                        unconditional_guidance_scale=opt.scale,
+                                                        unconditional_conditioning=uc,
+                                                        eta=opt.ddim_eta,
+                                                        x_T=start_code)
+
+                        x_samples_ddim = model.decode_first_stage(samples_ddim)
+                        diffusion_features = get_feature_dic()
+                
+                        
+                        x_sample = torch.clamp((x_samples_ddim[0] + 1.0) / 2.0, min=0.0, max=1.0)
+                        x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
+                        
+                        Image.fromarray(x_sample.astype(np.uint8)).save("demo/demo.png")    
+                        img = x_sample.astype(np.uint8)
+                        
+                        class_name = trainclass
+                        
+                        query_text ="a "+prompt.split()[1]+" of a "+class_name
+                        c_split = model.cond_stage_model.tokenizer.tokenize(query_text)
+                        
+                        sen_text_embedding = model.get_learned_conditioning(query_text)
+                        class_embedding = sen_text_embedding[:, 5:len(c_split)+1, :]
+                        
+                        if class_embedding.size()[1] > 1:
+                            class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
+                        text_embedding = class_embedding
+                    
+                        text_embedding = text_embedding.repeat(batch_size, 1, 1)
+                        
+                                    
+                        pred_seg_total = seg_module(diffusion_features, text_embedding)
+                    
+                        
+                        pred_seg = torch.unsqueeze(pred_seg_total[0,0,:,:], 0).unsqueeze(0)
+                            
+                        label_pred_prob = torch.sigmoid(pred_seg)
+                        label_pred_mask = torch.zeros_like(label_pred_prob, dtype=torch.float32)
+                        label_pred_mask[label_pred_prob > 0.5] = 1
+                        annotation_pred = label_pred_mask[0][0].cpu()
+                        
+                        mask = annotation_pred.numpy()
+                        mask = np.expand_dims(mask, 0)
+                        done_image_mask = plot_mask(img, mask, alpha=0.9, indexlist=[0])
+                        cv2.imwrite(os.path.join("demo/demo_mask.png"), done_image_mask)
+                        
+                        torchvision.utils.save_image(annotation_pred, os.path.join("demo/demo_segresult.png"), normalize=True, scale_each=True)
+
+
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -257,118 +371,4 @@ def main():
         default="autocast"
     )
     opt = parser.parse_args()
-
-    if opt.laion400m:
-        print("Falling back to LAION 400M model...")
-        opt.config = "configs/latent-diffusion/txt2img-1p4B-eval.yaml"
-        opt.ckpt = "models/ldm/text2img-large/model.ckpt"
-        opt.outdir = "outputs/txt2img-samples-laion400m"
-
-    seed_everything(opt.seed)
-    
-    tic = time.time()
-    config = OmegaConf.load(f"{opt.config}")
-    model = load_model_from_config(config, f"{opt.sd_ckpt}")
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    model = model.to(device)
-    toc = time.time()
-    seg_module=Segmodule().to(device)
-        
-    seg_module.load_state_dict(torch.load(opt.grounding_ckpt, map_location="cpu"), strict=True)
-    print('load time:',toc-tic)
-    sampler = DDIMSampler(model)
-
-    os.makedirs(opt.outdir, exist_ok=True)
-    outpath = opt.outdir
-    batch_size = opt.n_samples
-    precision_scope = autocast if opt.precision=="autocast" else nullcontext
-    with torch.no_grad():
-        with precision_scope("cuda"):
-            with model.ema_scope():
-                prompt = opt.prompt
-                text = opt.category
-                trainclass = text
-                if not opt.from_file:
-                    assert prompt is not None
-                    data = [batch_size * [prompt]]
-
-                else:
-                    print(f"reading prompts from {opt.from_file}")
-                    with open(opt.from_file, "r") as f:
-                        data = f.read().splitlines()
-                        data = list(chunk(data, batch_size))
-
-                sample_path = os.path.join(outpath, "samples")
-                os.makedirs(sample_path, exist_ok=True)
-
-                start_code = None
-                if opt.fixed_code:
-                    print('start_code')
-                    start_code = torch.randn([opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
-                for n in trange(opt.n_iter, desc="Sampling"):
-                    for prompts in tqdm(data, desc="data"):
-                        clear_feature_dic()
-                        uc = None
-                        if opt.scale != 1.0:
-                            uc = model.get_learned_conditioning(batch_size * [""])
-                        if isinstance(prompts, tuple):
-                            prompts = list(prompts)
-                        
-                        c = model.get_learned_conditioning(prompts)
-                        shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
-                        samples_ddim,_, _ = sampler.sample(S=opt.ddim_steps,
-                                                        conditioning=c,
-                                                        batch_size=opt.n_samples,
-                                                        shape=shape,
-                                                        verbose=False,
-                                                        unconditional_guidance_scale=opt.scale,
-                                                        unconditional_conditioning=uc,
-                                                        eta=opt.ddim_eta,
-                                                        x_T=start_code)
-
-                        x_samples_ddim = model.decode_first_stage(samples_ddim)
-                        diffusion_features = get_feature_dic()
-                
-                        
-                        x_sample = torch.clamp((x_samples_ddim[0] + 1.0) / 2.0, min=0.0, max=1.0)
-                        x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
-                        
-                        Image.fromarray(x_sample.astype(np.uint8)).save("demo/demo.png")    
-                        img = x_sample.astype(np.uint8)
-                        
-                        class_name = trainclass
-                        
-                        query_text ="a "+prompt.split()[1]+" of a "+class_name
-                        c_split = model.cond_stage_model.tokenizer.tokenize(query_text)
-                        
-                        sen_text_embedding = model.get_learned_conditioning(query_text)
-                        class_embedding = sen_text_embedding[:, 5:len(c_split)+1, :]
-                        
-                        if class_embedding.size()[1] > 1:
-                            class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
-                        text_embedding = class_embedding
-                    
-                        text_embedding = text_embedding.repeat(batch_size, 1, 1)
-                        
-                                    
-                        pred_seg_total = seg_module(diffusion_features, text_embedding)
-                    
-                        
-                        pred_seg = torch.unsqueeze(pred_seg_total[0,0,:,:], 0).unsqueeze(0)
-                            
-                        label_pred_prob = torch.sigmoid(pred_seg)
-                        label_pred_mask = torch.zeros_like(label_pred_prob, dtype=torch.float32)
-                        label_pred_mask[label_pred_prob > 0.5] = 1
-                        annotation_pred = label_pred_mask[0][0].cpu()
-                        
-                        mask = annotation_pred.numpy()
-                        mask = np.expand_dims(mask, 0)
-                        done_image_mask = plot_mask(img, mask, alpha=0.9, indexlist=[0])
-                        cv2.imwrite(os.path.join("demo/demo_mask.png"), done_image_mask)
-                        
-                        torchvision.utils.save_image(annotation_pred, os.path.join("demo/demo_segresult.png"), normalize=True, scale_each=True)
-
-
-
-if __name__ == "__main__":
-    main()
+    main(opt)

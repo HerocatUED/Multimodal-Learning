@@ -5,7 +5,6 @@ conda activate mml
 # conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
 pip install -r requirements.txt
 
-cp -p coco_80_class.txt src/mmdetection/demo/
 
 # other modules from Github
 mkdir src
@@ -23,6 +22,8 @@ mim install "mmcv>=2.0.0"
 git clone https://github.com/open-mmlab/mmdetection.git
 cd mmdetection
 pip install -e .
+# mkdir checkpoint
+# cp -p ./checkpoint/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco_20210903_104808-b92c91f1.pth ./src/mmdetection/checkpoint/
 cd ..
 
 # taming transformer
