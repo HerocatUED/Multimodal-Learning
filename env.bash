@@ -21,7 +21,7 @@ mim install mmengine
 mim install "mmcv>=2.0.0"
 git clone https://github.com/open-mmlab/mmdetection.git
 cd mmdetection
-pip install -e .
+pip install -v -e .
 cd ..
 
 # taming transformer
