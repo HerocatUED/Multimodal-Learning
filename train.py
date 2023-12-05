@@ -498,7 +498,7 @@ if __name__ == "__main__":
         "--save_name",
         type=str,
         help="the save dir name",
-        default=""
+        default="exp"
     )
     
     parser.add_argument(

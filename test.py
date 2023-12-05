@@ -188,7 +188,7 @@ def main(opt):
                         x_sample = torch.clamp((x_samples_ddim[0] + 1.0) / 2.0, min=0.0, max=1.0)
                         x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
                         
-                        Image.fromarray(x_sample.astype(np.uint8)).save("demo/demo.png")    
+                        Image.fromarray(x_sample.astype(np.uint8)).save(f"{sample_path}/demo.png")    
                         img = x_sample.astype(np.uint8)
                         
                         class_name = trainclass
@@ -219,9 +219,9 @@ def main(opt):
                         mask = annotation_pred.numpy()
                         mask = np.expand_dims(mask, 0)
                         done_image_mask = plot_mask(img, mask, alpha=0.9, indexlist=[0])
-                        cv2.imwrite(os.path.join("demo/demo_mask.png"), done_image_mask)
+                        cv2.imwrite(os.path.join(f"{sample_path}/demo_mask.png"), done_image_mask)
                         
-                        torchvision.utils.save_image(annotation_pred, os.path.join("demo/demo_segresult.png"), normalize=True, scale_each=True)
+                        torchvision.utils.save_image(annotation_pred, os.path.join(f"{sample_path}/demo_segresult.png"), normalize=True, scale_each=True)
 
 
 
@@ -247,7 +247,7 @@ if __name__ == "__main__":
         type=str,
         nargs="?",
         help="dir to write results to",
-        default="outputs/txt2img-samples"
+        default="outputs/txt2img"
     )
     parser.add_argument(
         "--skip_grid",
