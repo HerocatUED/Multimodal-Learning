@@ -11,15 +11,16 @@ TODO List：
 - [ ] Optional: Try segment a given image rather than segment generated images. 
 
 ## Requirements
-1. run `env.bash` under root dir
-2. Make sure you have access to hugging face or download "openai/clip-vit-large-patch14" under root dir
+1. Install [pytorch](https://pytorch.org/) (we use 2.1.1 with cuda 11.8)
+2. Run `env.bash` under root dir
+3. Make sure you have access to hugging face or download "openai/clip-vit-large-patch14" from [here](https://huggingface.co/openai/clip-vit-large-patch14) and put it under folder `openai/clip-vit-large-patch14`
 
 ## Model Zoo
-
+Put these models under `checkpoint` folder
 https://drive.google.com/drive/folders/1HlagN6jVhmC_UbrOAy133LkN4Qgf2Scv?usp=sharing
 
 ## Train
-Before training, please download the [checkpoint](https://drive.google.com/file/d/1JbJ7tWB15DzCB9pfLKnUHglckumOdUio/view) of the off-the-shelf detector into a folder called `mmdetection/checkpoint/`. 
+Before training, please download the [checkpoint](https://drive.google.com/file/d/1JbJ7tWB15DzCB9pfLKnUHglckumOdUio/view) of the off-the-shelf detector into a folder called `checkpoint/`. 
 ```
 python train.py --class_split 1 --train_data random --save_name pascal_1_random 
 ```
@@ -33,8 +34,6 @@ python test.py --sd_ckpt 'xxx/stable_diffusion.ckpt' \
 
 ```
 ## Citation
-If you use this code for your research or project, please cite:
-
 	@article{li2023grounded,
 	  title   = {Open-vocabulary Object Segmentation with Diffusion Models},
 	  author  = {Li, Ziyi and Zhou, Qinye and Zhang, Xiaoyun and Zhang, Ya and Wang, Yanfeng and Xie, Weidi},
@@ -43,4 +42,4 @@ If you use this code for your research or project, please cite:
 	}
 	
 ## Acknowledgements
-Many thanks to the code bases from [Stable Diffusion](https://github.com/CompVis/stable-diffusion), [CLIP](https://github.com/openai/CLIP), [taming-transformers](https://github.com/CompVis/taming-transformers).
+Many thanks to the code bases from [Stable Diffusion](https://github.com/CompVis/stable-diffusion), [CLIP](https://github.com/openai/CLIP), [taming-transformers](https://github.com/CompVis/taming-transformers), [mmdetection](https://github.com/open-mmlab/mmdetection)
