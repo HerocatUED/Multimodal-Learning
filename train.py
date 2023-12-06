@@ -1,4 +1,5 @@
 from mmdet.apis import init_detector, inference_detector
+# from inference import init_detector, inference_detector
 import warnings
 from pytorch_lightning import seed_everything
 warnings.filterwarnings("ignore")
@@ -110,7 +111,7 @@ def main(opt):
         count+=1
     print("class_coco=",class_coco)
     
-    pascal_file="./VOC/class_split"+str(opt.class_split)+".csv"
+    pascal_file=".data/VOC/class_split"+str(opt.class_split)+".csv"
     
     class_total=[]
     f=open(pascal_file,"r")
@@ -131,6 +132,8 @@ def main(opt):
     pretrain_detector = init_detector(config_file, checkpoint_file, device=device)
     starttime = datetime.now()
     seg_module=Segmodule().to(device)
+    state_dic = torch.load('checkpoint/grounding_module.pth')
+    seg_module.load_state_dict(state_dic)
     model = load_model_from_config(config, f"{opt.ckpt}")
     endtime = datetime.now()
     print ("the time of load_model_from_config is",(endtime - starttime).seconds)
@@ -151,10 +154,10 @@ def main(opt):
     print('***********************   begin   **********************************')
     
     current_time = datetime.now().strftime('%b%d_%H-%M-%S')
-    save_dir = 'checkpoint'
+    save_dir = 'outputs/exps/'
     os.makedirs(save_dir, exist_ok=True)
     learning_rate = 1e-5 
-    total_epoch = 500000
+    total_epoch = 50
     
     ckpt_dir = os.path.join(save_dir, opt.save_name+'run-'+current_time)
     os.makedirs(ckpt_dir, exist_ok=True)
@@ -263,7 +266,8 @@ def main(opt):
                 result = inference_detector(pretrain_detector, x_sample_list)
                 seg_result_list=[]
                 for i in range(len(result)):
-                    _,seg_result=result[i]
+                    # what = result[i].pred_instances
+                    seg_result=result[i].pred_instances.masks
                     seg_result_list.append(seg_result)
                 
                 loss=[]
@@ -304,26 +308,30 @@ def main(opt):
                         label_pred_mask = torch.zeros_like(label_pred_prob, dtype=torch.float32)
                         label_pred_mask[label_pred_prob>0.5] = 1
                         annotation_pred = label_pred_mask[0][0].cpu()
-                        if b_index==0 and j%200 ==0:
+                        if b_index==0 :
+                            # if b_index==0 and j%200 ==0:
                             torchvision.utils.save_image(annotation_pred, os.path.join(ckpt_dir, 
                                                             'training/'+ str(b_index)+'viz_sample_{0:05d}_pred_seg'.format(j)+class_name+'.png'), normalize=True, scale_each=True)
                             
-                        if len(seg_result_list[b_index][class_index])==0:
+                        if len(seg_result_list[b_index])==0:
                             print("pretrain detector fail to detect the object in the class:",class_name)
                         else:
-                            seg=torch.from_numpy(seg_result_list[b_index][class_index][0].astype(int))
+                            seg=seg_result_list[b_index][0]
                             seg=seg.float().unsqueeze(0).unsqueeze(0).cuda()
                             
                             loss.append(loss_fn(pred_seg, seg))
                             
-                            annotation_pred_gt = seg[0][0].cpu()
+                            annotation_pred_gt = seg[0].cpu()
                             
-                            if b_index==0 and j%200 ==0:
-                                viz_tensor2 = torch.cat([annotation_pred_gt, annotation_pred], axis=1)
+                            if b_index==0:
+                                # if b_index==0 and j%200 ==0:
+                                print(annotation_pred_gt.size)
+                                print(annotation_pred.size)
+                                viz_tensor2 = torch.cat([annotation_pred_gt, annotation_pred.unsqueeze(0)], axis=1)
                                 
                                 torchvision.utils.save_image(viz_tensor2, os.path.join(ckpt_dir, 
                                                                     'training/'+ str(b_index)+'viz_sample_{0:05d}_seg'.format(j)+class_name+'.png'), normalize=True, scale_each=True)
-                                
+                        break 
                 if len(loss)==0:
                     pass
                 else:

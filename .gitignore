@@ -1,7 +1,7 @@
 **/__pycache__
+.vscode
 checkpoint
 src
 openai
-demo
+outputs
 tmp
-.vscode
