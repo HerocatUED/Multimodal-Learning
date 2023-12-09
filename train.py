@@ -23,6 +23,8 @@ import torch.optim as optim
 from ldm.modules.diffusionmodules.openaimodel import clear_feature_dic,get_feature_dic
 from ldm.models.seg_module import Segmodule
 
+from evaluate import IoU
+
 
 def chunk(it, size):
     it = iter(it)
@@ -101,7 +103,8 @@ def load_img(path):
 
 def main(opt):
     seed_everything(opt.seed)
-
+    
+    print("Loading classes from COCO and PASCAL")
     class_coco={}
     f=open("data/coco_80_class.txt","r")
     count=0
@@ -109,66 +112,61 @@ def main(opt):
         c_name=line.split("\n")[0]
         class_coco[c_name]=count
         count+=1
-    print("class_coco=",class_coco)
     
     pascal_file="./data/VOC/class_split"+str(opt.class_split)+".csv"
-    
     class_total=[]
     f=open(pascal_file,"r")
     count=0
     for line in f.readlines():
         count+=1
         class_total.append(line.split(",")[0])
-
     class_train=class_total[:15]
     class_test=class_total[15:]
-    print("class_train=",class_train)
-    print("class_test=",class_test)
+    if opt.data_mode==1:
+        class_train=class_total[:15]
+    elif opt.data_mode==2:
+        class_train=class_total[15:]
+
     config = OmegaConf.load(f"{opt.config}")
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     config_file = './src/mmdetection/configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py'
     checkpoint_file = './checkpoint/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco_20210903_104808-b92c91f1.pth'
-
     pretrain_detector = init_detector(config_file, checkpoint_file, device=device)
-    starttime = datetime.now()
     seg_module=Segmodule().to(device)
     state_dic = torch.load('checkpoint/grounding_module.pth')
     seg_module.load_state_dict(state_dic)
     model = load_model_from_config(config, f"{opt.ckpt}").to(device)
-    endtime = datetime.now()
-    print ("the time of load_model_from_config is",(endtime - starttime).seconds)
-    
     sampler = DDIMSampler(model)
 
     os.makedirs(opt.outdir, exist_ok=True)
     outpath = opt.outdir
-
     batch_size = opt.n_samples
-
     sample_path = os.path.join(outpath, "samples")
     os.makedirs(sample_path, exist_ok=True)
-
-    print('***********************   begin   **********************************')
-    
     current_time = datetime.now().strftime('%b%d_%H-%M-%S')
     save_dir = 'outputs/exps/'
     os.makedirs(save_dir, exist_ok=True)
-    learning_rate = 1e-5 
-    total_epoch = 50
-    
     ckpt_dir = os.path.join(save_dir, opt.save_name+'-'+current_time)
     os.makedirs(ckpt_dir, exist_ok=True)
     from torch.utils.tensorboard import SummaryWriter
     writer = SummaryWriter(log_dir=os.path.join(ckpt_dir, 'logs'))
     os.makedirs(os.path.join(ckpt_dir, 'training'), exist_ok=True)
     
+    learning_rate = 1e-5 
+    total_epoch = 3000
     g_optim = optim.Adam(
                 [{"params": seg_module.parameters()},],
                 lr=learning_rate
               )
-
     loss_fn = nn.BCEWithLogitsLoss()
+    if batch_size > 1:
+        print("Model Distributed DataParallel")
+        torch.multiprocessing.set_sharing_strategy('file_system')
+        seg_module = torch.nn.parallel.DistributedDataParallel(
+            module=seg_module, device_ids=[device],
+            output_device=device, broadcast_buffers=False)
     
+    print('***********************   begin   **********************************')
     print("Start training with maximum {0} iterations.".format(total_epoch))
     
     start_code = None
@@ -179,6 +177,8 @@ def main(opt):
     
     batch_size = opt.n_samples
     train_data_choice=opt.train_data
+    print('data choice:', train_data_choice)
+    iou = 0
     for j in range(total_epoch):
         print('Epoch ' +  str(j) + '/' + str(total_epoch))
         if not opt.from_file:
@@ -220,6 +220,7 @@ def main(opt):
                 select_class1=class_train[select_class_index1]
                 trainclass_list.append(select_class1)
                 prompt = text+select_class1
+            print(f"Epoch {j}: prompt--{prompt}")
                
             assert prompt is not None
             data = [batch_size * [prompt]]
@@ -263,7 +264,6 @@ def main(opt):
                 result = inference_detector(pretrain_detector, x_sample_list)
                 seg_result_list=[]
                 for i in range(len(result)):
-                    # what = result[i].pred_instances
                     seg_result=result[i].pred_instances.masks
                     seg_result_list.append(seg_result)
                 
@@ -293,8 +293,8 @@ def main(opt):
                 
                 for b_index in range(batch_size):
                     # if b_index==0 and j%200 ==0:
-                    Image.fromarray(x_sample_list[b_index].astype(np.uint8)).save(os.path.join(ckpt_dir, 
-                                                                    'training/'+ str(b_index)+'viz_sample_{0:05d}.png'.format(j)))
+                    # Image.fromarray(x_sample_list[b_index].astype(np.uint8)).save(os.path.join(ckpt_dir, 
+                    #                                                 'training/'+ str(b_index)+'viz_sample_{0:05d}.png'.format(j)))
                     for train_class_index in range(len(trainclass_list)):
                         trainclass=trainclass_list[train_class_index]
                         class_index=class_coco[trainclass]
@@ -305,10 +305,6 @@ def main(opt):
                         label_pred_mask = torch.zeros_like(label_pred_prob, dtype=torch.float32)
                         label_pred_mask[label_pred_prob>0.5] = 1
                         annotation_pred = label_pred_mask[0][0].cpu()
-                        # if b_index==0 :
-                            # if b_index==0 and j%200 ==0:
-                        torchvision.utils.save_image(annotation_pred, os.path.join(ckpt_dir, 
-                                                        'training/'+ str(b_index)+'viz_sample_{0:05d}_pred_seg'.format(j)+class_name+'.png'), normalize=True, scale_each=True)
                             
                         if len(seg_result_list[b_index])==0:
                             print("pretrain detector fail to detect the object in the class:",class_name)
@@ -322,15 +318,15 @@ def main(opt):
                             
                             # if b_index==0:
                                 # if b_index==0 and j%200 ==0:
-                            from evaluate import IoU
-                            print("\n")
-                            print(IoU(annotation_pred_gt, annotation_pred.unsqueeze(0)))
-                            print(annotation_pred_gt.shape)
-                            print(annotation_pred.unsqueeze(0).shape)
+                            # print("\n")
+                            iou += IoU(annotation_pred_gt, annotation_pred.unsqueeze(0))
+                            # print(IoU(annotation_pred_gt, annotation_pred.unsqueeze(0)))
+                            # print(annotation_pred_gt.shape)
+                            # print(annotation_pred.unsqueeze(0).shape)
                             viz_tensor2 = torch.cat([annotation_pred_gt, annotation_pred.unsqueeze(0)], axis=1)
                             
-                            torchvision.utils.save_image(viz_tensor2, os.path.join(ckpt_dir, 
-                                                                'training/'+ str(b_index)+'viz_sample_{0:05d}_seg'.format(j)+class_name+'.png'), normalize=True, scale_each=True)
+                            # torchvision.utils.save_image(viz_tensor2, os.path.join(ckpt_dir, 
+                            #                                     'training/'+ str(b_index)+'viz_sample_{0:05d}_seg'.format(j)+class_name+'.png'), normalize=True, scale_each=True)
                         break 
                 if len(loss)==0:
                     pass
@@ -346,12 +342,18 @@ def main(opt):
                     writer.add_scalar('train/loss', total_loss.item(), global_step=j)
                     print("Training step: {0:05d}/{1:05d}, loss: {2:0.4f}".format(j, total_epoch, total_loss))
         ##save checkpoint
-        if j%200 ==0 and j!=0:
-            print("Saving latest checkpoint to",ckpt_dir)
-            torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_latest.pth'))
-        if j%5000==0  and j!=0:
-            print("Saving latest checkpoint to",ckpt_dir)
-            torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_'+str(j)+'.pth'))  
+        # if j%200 ==0 and j!=0:
+        #     print("Saving latest checkpoint to",ckpt_dir)
+        #     torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_latest.pth'))
+        # if j%5000==0  and j!=0:
+        #     print("Saving latest checkpoint to",ckpt_dir)
+        #     torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_'+str(j)+'.pth'))  
+    print('\n\n\n')
+    print(iou/total_epoch)
+    print('\n\n\n')
+    with open('tmp/ious.txt', "a") as f:
+        f.write(str(iou/total_epoch)+'\n')
+    
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -520,6 +522,12 @@ if __name__ == "__main__":
         type=str,
         help="the type of training data: single, two, random",
         default="single"
+    )
+    parser.add_argument(
+        "--data_mode",
+        type=int,
+        default=1,
+        help="which data split",
     )
     
     opt = parser.parse_args()
