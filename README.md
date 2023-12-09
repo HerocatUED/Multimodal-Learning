@@ -33,7 +33,7 @@ python test.py --sd_ckpt 'xxx/stable_diffusion.ckpt' \
 --category "lion"
 
 ```
-## Citation
+## Reference
 	@article{li2023grounded,
 	  title   = {Open-vocabulary Object Segmentation with Diffusion Models},
 	  author  = {Li, Ziyi and Zhou, Qinye and Zhang, Xiaoyun and Zhang, Ya and Wang, Yanfeng and Xie, Weidi},
