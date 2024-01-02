@@ -105,8 +105,8 @@ def load_img(path):
     return 2.*image - 1.
 
 
-def main(opt):
-    seed_everything(opt.seed)
+def main(args):
+    seed_everything(args.seed)
 
     print("Loading classes from COCO and PASCAL")
     class_coco = {}
@@ -117,7 +117,7 @@ def main(opt):
         class_coco[c_name] = count
         count += 1
 
-    pascal_file = "./data/VOC/class_split"+str(opt.class_split)+".csv"
+    pascal_file = "./data/VOC/class_split"+str(args.class_split)+".csv"
     class_total = []
     f = open(pascal_file, "r")
     count = 0
@@ -126,12 +126,12 @@ def main(opt):
         class_total.append(line.split(",")[0])
     class_train = class_total[:15]
     class_test = class_total[15:]
-    if opt.data_mode == 1:
+    if args.data_mode == 1:
         class_train = class_total[:15]
-    elif opt.data_mode == 2:
+    elif args.data_mode == 2:
         class_train = class_total[15:]
 
-    config = OmegaConf.load(f"{opt.config}")
+    config = OmegaConf.load(f"{args.config}")
     device = torch.device(
         "cuda") if torch.cuda.is_available() else torch.device("cpu")
     config_file = './src/mmdetection/configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py'
@@ -141,18 +141,18 @@ def main(opt):
     seg_module = Segmodule().to(device)
     state_dic = torch.load('checkpoint/grounding_module.pth')
     seg_module.load_state_dict(state_dic)
-    model = load_model_from_config(config, f"{opt.ckpt}").to(device)
+    model = load_model_from_config(config, f"{args.ckpt}").to(device)
     sampler = DDIMSampler(model)
 
-    os.makedirs(opt.outdir, exist_ok=True)
-    outpath = opt.outdir
-    batch_size = opt.n_samples
+    os.makedirs(args.outdir, exist_ok=True)
+    outpath = args.outdir
+    batch_size = args.n_samples
     sample_path = os.path.join(outpath, "samples")
     os.makedirs(sample_path, exist_ok=True)
     current_time = datetime.now().strftime('%b%d_%H-%M-%S')
     save_dir = 'outputs/exps/'
     os.makedirs(save_dir, exist_ok=True)
-    ckpt_dir = os.path.join(save_dir, opt.save_name+'-'+current_time)
+    ckpt_dir = os.path.join(save_dir, args.save_name+'-'+current_time)
     os.makedirs(ckpt_dir, exist_ok=True)
     from torch.utils.tensorboard import SummaryWriter
     writer = SummaryWriter(log_dir=os.path.join(ckpt_dir, 'logs'))
@@ -176,18 +176,18 @@ def main(opt):
     print("Start training with maximum {0} iterations.".format(total_epoch))
 
     start_code = None
-    if opt.fixed_code:
+    if args.fixed_code:
         print('start_code')
         start_code = torch.randn(
-            [opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
+            [args.n_samples, args.C, args.H // args.f, args.W // args.f], device=device)
 
-    batch_size = opt.n_samples
-    train_data_choice = opt.train_data
+    batch_size = args.n_samples
+    train_data_choice = args.train_data
     print('data choice:', train_data_choice)
     iou = 0
     for j in range(total_epoch):
         print('Epoch ' + str(j) + '/' + str(total_epoch))
-        if not opt.from_file:
+        if not args.from_file:
 
             trainclass_list = []
             text = "a photograph of a "
@@ -232,30 +232,30 @@ def main(opt):
             data = [batch_size * [prompt]]
 
         else:
-            print(f"reading prompts from {opt.from_file}")
-            with open(opt.from_file, "r") as f:
+            print(f"reading prompts from {args.from_file}")
+            with open(args.from_file, "r") as f:
                 data = f.read().splitlines()
                 data = list(chunk(data, batch_size))
-        for n in trange(opt.n_iter, desc="Sampling"):
+        for n in trange(args.n_iter, desc="Sampling"):
             for prompts in tqdm(data, desc="data"):
                 clear_feature_dic()
                 uc = None
 
-                if opt.scale != 1.0:
+                if args.scale != 1.0:
                     uc = model.get_learned_conditioning(batch_size * [""])
                 if isinstance(prompts, tuple):
                     prompts = list(prompts)
 
                 c = model.get_learned_conditioning(prompts)
-                shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
-                samples_ddim, _, _ = sampler.sample(S=opt.ddim_steps,
+                shape = [args.C, args.H // args.f, args.W // args.f]
+                samples_ddim, _, _ = sampler.sample(S=args.ddim_steps,
                                                     conditioning=c,
-                                                    batch_size=opt.n_samples,
+                                                    batch_size=args.n_samples,
                                                     shape=shape,
                                                     verbose=False,
-                                                    unconditional_guidance_scale=opt.scale,
+                                                    unconditional_guidance_scale=args.scale,
                                                     unconditional_conditioning=uc,
-                                                    eta=opt.ddim_eta,
+                                                    eta=args.ddim_eta,
                                                     x_T=start_code)
 
                 x_samples_ddim = model.decode_first_stage(samples_ddim)

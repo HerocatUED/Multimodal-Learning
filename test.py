@@ -118,19 +118,19 @@ def plot_mask(img, masks, colors=None, alpha=0.8, indexlist=[0, 1]) -> np.ndarra
     return img.astype(np.uint8)
 
 
-def main(opt):
+def main(args):
 
-    if opt.laion400m:
+    if args.laion400m:
         print("Falling back to LAION 400M model...")
-        opt.config = "configs/latent-diffusion/txt2img-1p4B-eval.yaml"
-        opt.ckpt = "models/ldm/text2img-large/model.ckpt"
-        opt.outdir = "outputs/txt2img-samples-laion400m"
+        args.config = "configs/latent-diffusion/txt2img-1p4B-eval.yaml"
+        args.ckpt = "models/ldm/text2img-large/model.ckpt"
+        args.outdir = "outputs/txt2img-samples-laion400m"
 
-    seed_everything(opt.seed)
+    seed_everything(args.seed)
 
     tic = time.time()
-    config = OmegaConf.load(f"{opt.config}")
-    model = load_model_from_config(config, f"{opt.sd_ckpt}")
+    config = OmegaConf.load(f"{args.config}")
+    model = load_model_from_config(config, f"{args.sd_ckpt}")
     device = torch.device(
         "cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)
@@ -138,27 +138,27 @@ def main(opt):
     seg_module = Segmodule().to(device)
 
     seg_module.load_state_dict(torch.load(
-        opt.grounding_ckpt, map_location="cpu"), strict=True)
+        args.grounding_ckpt, map_location="cpu"), strict=True)
     print('load time:', toc-tic)
     sampler = DDIMSampler(model)
 
-    os.makedirs(opt.outdir, exist_ok=True)
-    outpath = opt.outdir
-    batch_size = opt.n_samples
-    precision_scope = autocast if opt.precision == "autocast" else nullcontext
+    os.makedirs(args.outdir, exist_ok=True)
+    outpath = args.outdir
+    batch_size = args.n_samples
+    precision_scope = autocast if args.precision == "autocast" else nullcontext
     with torch.no_grad():
         with precision_scope("cuda"):
             with model.ema_scope():
-                prompt = opt.prompt
-                text = opt.category
+                prompt = args.prompt
+                text = args.category
                 trainclass = text
-                if not opt.from_file:
+                if not args.from_file:
                     assert prompt is not None
                     data = [batch_size * [prompt]]
 
                 else:
-                    print(f"reading prompts from {opt.from_file}")
-                    with open(opt.from_file, "r") as f:
+                    print(f"reading prompts from {args.from_file}")
+                    with open(args.from_file, "r") as f:
                         data = f.read().splitlines()
                         data = list(chunk(data, batch_size))
 
@@ -166,30 +166,30 @@ def main(opt):
                 os.makedirs(sample_path, exist_ok=True)
 
                 start_code = None
-                if opt.fixed_code:
+                if args.fixed_code:
                     print('start_code')
                     start_code = torch.randn(
-                        [opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
-                for n in trange(opt.n_iter, desc="Sampling"):
+                        [args.n_samples, args.C, args.H // args.f, args.W // args.f], device=device)
+                for n in trange(args.n_iter, desc="Sampling"):
                     for prompts in tqdm(data, desc="data"):
                         clear_feature_dic()
                         uc = None
-                        if opt.scale != 1.0:
+                        if args.scale != 1.0:
                             uc = model.get_learned_conditioning(
                                 batch_size * [""])
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
 
                         c = model.get_learned_conditioning(prompts)
-                        shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
-                        samples_ddim, _, _ = sampler.sample(S=opt.ddim_steps,
+                        shape = [args.C, args.H // args.f, args.W // args.f]
+                        samples_ddim, _, _ = sampler.sample(S=args.ddim_steps,
                                                             conditioning=c,
-                                                            batch_size=opt.n_samples,
+                                                            batch_size=args.n_samples,
                                                             shape=shape,
                                                             verbose=False,
-                                                            unconditional_guidance_scale=opt.scale,
+                                                            unconditional_guidance_scale=args.scale,
                                                             unconditional_conditioning=uc,
-                                                            eta=opt.ddim_eta,
+                                                            eta=args.ddim_eta,
                                                             x_T=start_code)
 
                         x_samples_ddim = model.decode_first_stage(samples_ddim)
@@ -201,7 +201,7 @@ def main(opt):
                             rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
 
                         Image.fromarray(x_sample.astype(np.uint8)).save(
-                            f"{sample_path}/{opt.prompt}.png")
+                            f"{sample_path}/{args.prompt}.png")
                         img = x_sample.astype(np.uint8)
 
                         class_name = trainclass
@@ -240,10 +240,10 @@ def main(opt):
                         done_image_mask = plot_mask(
                             img, mask, alpha=0.9, indexlist=[0])
                         cv2.imwrite(os.path.join(
-                            f"{sample_path}/{opt.prompt}_mask.png"), done_image_mask)
+                            f"{sample_path}/{args.prompt}_mask.png"), done_image_mask)
 
                         torchvision.utils.save_image(annotation_pred, os.path.join(
-                            f"{sample_path}/{opt.prompt}_seg.png"), normalize=True, scale_each=True)
+                            f"{sample_path}/{args.prompt}_seg.png"), normalize=True, scale_each=True)
 
 
 if __name__ == "__main__":
@@ -391,5 +391,5 @@ if __name__ == "__main__":
         choices=["full", "autocast"],
         default="autocast"
     )
-    opt = parser.parse_args()
-    main(opt)
+    args = parser.parse_args()
+    main(args)
