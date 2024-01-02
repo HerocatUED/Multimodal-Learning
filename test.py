@@ -1,4 +1,5 @@
-import argparse, os
+import argparse
+import os
 import cv2
 import torch
 import numpy as np
@@ -16,10 +17,11 @@ from contextlib import nullcontext
 
 from ldm.util import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
-from ldm.modules.diffusionmodules.openaimodel import clear_feature_dic,get_feature_dic
+from ldm.modules.diffusionmodules.openaimodel import clear_feature_dic, get_feature_dic
 from ldm.models.seg_module import Segmodule
 
 import numpy as np
+
 
 def chunk(it, size):
     it = iter(it)
@@ -69,14 +71,16 @@ def put_watermark(img, wm_encoder=None):
 def load_replacement(x):
     try:
         hwc = x.shape
-        y = Image.open("assets/rick.jpeg").convert("RGB").resize((hwc[1], hwc[0]))
+        y = Image.open(
+            "assets/rick.jpeg").convert("RGB").resize((hwc[1], hwc[0]))
         y = (np.array(y)/255.0).astype(x.dtype)
         assert y.shape == x.shape
         return y
     except Exception:
         return x
 
-def plot_mask(img, masks, colors=None, alpha=0.8,indexlist=[0,1]) -> np.ndarray:
+
+def plot_mask(img, masks, colors=None, alpha=0.8, indexlist=[0, 1]) -> np.ndarray:
     """Visualize segmentation mask.
 
     Parameters
@@ -97,19 +101,22 @@ def plot_mask(img, masks, colors=None, alpha=0.8,indexlist=[0,1]) -> np.ndarray:
         The image plotted with segmentation masks, shape `(H, W, 3)`
 
     """
-    H,W= masks.shape[0],masks.shape[1]
-    color_list=[[255,97,0],[128,42,42],[220,220,220],[255,153,18],[56,94,15],[127,255,212],[210,180,140],[221,160,221],[255,0,0],[255,128,0],[255,255,0],[128,255,0],[0,255,0],[0,255,128],[0,255,255],[0,128,255],[0,0,255],[128,0,255],[255,0,255],[255,0,128]]*6
-    final_color_list=[np.array([[i]*512]*512) for i in color_list]
-    
-    background=np.ones(img.shape)*255
-    count=0
-    colors=final_color_list[indexlist[count]]
+    H, W = masks.shape[0], masks.shape[1]
+    color_list = [[255, 97, 0], [128, 42, 42], [220, 220, 220], [255, 153, 18], [56, 94, 15], [127, 255, 212], [210, 180, 140], [221, 160, 221], [255, 0, 0], [
+        255, 128, 0], [255, 255, 0], [128, 255, 0], [0, 255, 0], [0, 255, 128], [0, 255, 255], [0, 128, 255], [0, 0, 255], [128, 0, 255], [255, 0, 255], [255, 0, 128]]*6
+    final_color_list = [np.array([[i]*512]*512) for i in color_list]
+
+    background = np.ones(img.shape)*255
+    count = 0
+    colors = final_color_list[indexlist[count]]
     for mask, color in zip(masks, colors):
-        color=final_color_list[indexlist[count]]
+        color = final_color_list[indexlist[count]]
         mask = np.stack([mask, mask, mask], -1)
-        img = np.where(mask, img * (1 - alpha) + color * alpha,background*0.4+img*0.6 )
-        count+=1
+        img = np.where(mask, img * (1 - alpha) + color *
+                       alpha, background*0.4+img*0.6)
+        count += 1
     return img.astype(np.uint8)
+
 
 def main(opt):
 
@@ -120,23 +127,25 @@ def main(opt):
         opt.outdir = "outputs/txt2img-samples-laion400m"
 
     seed_everything(opt.seed)
-    
+
     tic = time.time()
     config = OmegaConf.load(f"{opt.config}")
     model = load_model_from_config(config, f"{opt.sd_ckpt}")
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = torch.device(
+        "cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)
     toc = time.time()
-    seg_module=Segmodule().to(device)
-        
-    seg_module.load_state_dict(torch.load(opt.grounding_ckpt, map_location="cpu"), strict=True)
-    print('load time:',toc-tic)
+    seg_module = Segmodule().to(device)
+
+    seg_module.load_state_dict(torch.load(
+        opt.grounding_ckpt, map_location="cpu"), strict=True)
+    print('load time:', toc-tic)
     sampler = DDIMSampler(model)
 
     os.makedirs(opt.outdir, exist_ok=True)
     outpath = opt.outdir
     batch_size = opt.n_samples
-    precision_scope = autocast if opt.precision=="autocast" else nullcontext
+    precision_scope = autocast if opt.precision == "autocast" else nullcontext
     with torch.no_grad():
         with precision_scope("cuda"):
             with model.ema_scope():
@@ -159,70 +168,82 @@ def main(opt):
                 start_code = None
                 if opt.fixed_code:
                     print('start_code')
-                    start_code = torch.randn([opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
+                    start_code = torch.randn(
+                        [opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
                 for n in trange(opt.n_iter, desc="Sampling"):
                     for prompts in tqdm(data, desc="data"):
                         clear_feature_dic()
                         uc = None
                         if opt.scale != 1.0:
-                            uc = model.get_learned_conditioning(batch_size * [""])
+                            uc = model.get_learned_conditioning(
+                                batch_size * [""])
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
-                        
+
                         c = model.get_learned_conditioning(prompts)
                         shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
-                        samples_ddim,_, _ = sampler.sample(S=opt.ddim_steps,
-                                                        conditioning=c,
-                                                        batch_size=opt.n_samples,
-                                                        shape=shape,
-                                                        verbose=False,
-                                                        unconditional_guidance_scale=opt.scale,
-                                                        unconditional_conditioning=uc,
-                                                        eta=opt.ddim_eta,
-                                                        x_T=start_code)
+                        samples_ddim, _, _ = sampler.sample(S=opt.ddim_steps,
+                                                            conditioning=c,
+                                                            batch_size=opt.n_samples,
+                                                            shape=shape,
+                                                            verbose=False,
+                                                            unconditional_guidance_scale=opt.scale,
+                                                            unconditional_conditioning=uc,
+                                                            eta=opt.ddim_eta,
+                                                            x_T=start_code)
 
                         x_samples_ddim = model.decode_first_stage(samples_ddim)
                         diffusion_features = get_feature_dic()
-                
-                        
-                        x_sample = torch.clamp((x_samples_ddim[0] + 1.0) / 2.0, min=0.0, max=1.0)
-                        x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
-                        
-                        Image.fromarray(x_sample.astype(np.uint8)).save(f"{sample_path}/{opt.prompt}.png")    
+
+                        x_sample = torch.clamp(
+                            (x_samples_ddim[0] + 1.0) / 2.0, min=0.0, max=1.0)
+                        x_sample = 255. * \
+                            rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
+
+                        Image.fromarray(x_sample.astype(np.uint8)).save(
+                            f"{sample_path}/{opt.prompt}.png")
                         img = x_sample.astype(np.uint8)
-                        
+
                         class_name = trainclass
-                        
-                        query_text ="a "+prompt.split()[1]+" of a "+class_name
-                        c_split = model.cond_stage_model.tokenizer.tokenize(query_text)
-                        
-                        sen_text_embedding = model.get_learned_conditioning(query_text)
-                        class_embedding = sen_text_embedding[:, 5:len(c_split)+1, :]
-                        
+
+                        query_text = "a "+prompt.split()[1]+" of a "+class_name
+                        c_split = model.cond_stage_model.tokenizer.tokenize(
+                            query_text)
+
+                        sen_text_embedding = model.get_learned_conditioning(
+                            query_text)
+                        class_embedding = sen_text_embedding[:, 5:len(
+                            c_split)+1, :]
+
                         if class_embedding.size()[1] > 1:
-                            class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
+                            class_embedding = torch.unsqueeze(
+                                class_embedding.mean(1), 1)
                         text_embedding = class_embedding
-                    
-                        text_embedding = text_embedding.repeat(batch_size, 1, 1)
-                        
-                                    
-                        pred_seg_total = seg_module(diffusion_features, text_embedding)
-                    
-                        
-                        pred_seg = torch.unsqueeze(pred_seg_total[0,0,:,:], 0).unsqueeze(0)
-                            
+
+                        text_embedding = text_embedding.repeat(
+                            batch_size, 1, 1)
+
+                        pred_seg_total = seg_module(
+                            diffusion_features, text_embedding)
+
+                        pred_seg = torch.unsqueeze(
+                            pred_seg_total[0, 0, :, :], 0).unsqueeze(0)
+
                         label_pred_prob = torch.sigmoid(pred_seg)
-                        label_pred_mask = torch.zeros_like(label_pred_prob, dtype=torch.float32)
+                        label_pred_mask = torch.zeros_like(
+                            label_pred_prob, dtype=torch.float32)
                         label_pred_mask[label_pred_prob > 0.5] = 1
                         annotation_pred = label_pred_mask[0][0].cpu()
-                        
+
                         mask = annotation_pred.numpy()
                         mask = np.expand_dims(mask, 0)
-                        done_image_mask = plot_mask(img, mask, alpha=0.9, indexlist=[0])
-                        cv2.imwrite(os.path.join(f"{sample_path}/{opt.prompt}_mask.png"), done_image_mask)
-                        
-                        torchvision.utils.save_image(annotation_pred, os.path.join(f"{sample_path}/{opt.prompt}_seg.png"), normalize=True, scale_each=True)
+                        done_image_mask = plot_mask(
+                            img, mask, alpha=0.9, indexlist=[0])
+                        cv2.imwrite(os.path.join(
+                            f"{sample_path}/{opt.prompt}_mask.png"), done_image_mask)
 
+                        torchvision.utils.save_image(annotation_pred, os.path.join(
+                            f"{sample_path}/{opt.prompt}_seg.png"), normalize=True, scale_each=True)
 
 
 if __name__ == "__main__":
