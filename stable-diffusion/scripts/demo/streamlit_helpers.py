@@ -21,8 +21,7 @@ from torchvision.utils import make_grid, save_image
 
 from scripts.demo.discretization import (Img2ImgDiscretizationWrapper,
                                          Txt2NoisyDiscretizationWrapper)
-from scripts.util.detection.nsfw_and_watermark_dectection import \
-    DeepFloydDataFiltering
+from scripts.util.detection.nsfw_and_watermark_dectection import DeepFloydDataFiltering
 from sgm.inference.helpers import embed_watermark
 from sgm.modules.diffusionmodules.guiders import (LinearPredictionGuider,
                                                   VanillaCFG)

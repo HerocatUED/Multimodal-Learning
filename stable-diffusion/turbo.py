@@ -1,4 +1,4 @@
-from streamlit_helpers import *
+from scripts.demo.streamlit_helpers import *
 from st_keyup import st_keyup
 from sgm.modules.diffusionmodules.sampling import EulerAncestralSampler
 
@@ -99,6 +99,7 @@ def sample(
     W=1024,
     seed=0,
     filter=None,
+    return_condition=False
 ):
     F = 8
     C = 4
@@ -150,6 +151,8 @@ def sample(
                 .cpu()
                 .numpy()
             )
+    if return_condition:
+        return samples, c, uc
     return samples
 
 

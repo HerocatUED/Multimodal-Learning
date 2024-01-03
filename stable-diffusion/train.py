@@ -2,10 +2,12 @@ import os
 import argparse
 from evaluate import IoU
 from seg_module import Segmodule
-from ..sgm.modules.diffusionmodules.openaimodel import clear_feature_dic, get_feature_dic
+
+os.sys.path.append("..")
+from sgm.modules.diffusionmodules.openaimodel import clear_feature_dic, get_feature_dic
 # from ..sgm.models.diffusion.ddim import DDIMSampler
-from ..scripts.demo.turbo import *
-from ..sgm.util import instantiate_from_config
+from scripts.demo.turbo import *
+from sgm.util import instantiate_from_config
 import torch.optim as optim
 import random
 import torchvision
@@ -109,14 +111,14 @@ def load_img(path):
 def load_classes(args):
     print("Loading classes from COCO and PASCAL")
     class_coco = {}
-    f = open("./data/coco_80_class.txt", "r")
+    f = open("../data/coco_80_class.txt", "r")
     count = 0
     for line in f.readlines():
         c_name = line.split("\n")[0]
         class_coco[c_name] = count
         count += 1
 
-    pascal_file = "./data/VOC/class_split"+str(args.class_split)+".csv"
+    pascal_file = "../data/VOC/class_split"+str(args.class_split)+".csv"
     class_total = []
     f = open(pascal_file, "r")
     count = 0
@@ -141,20 +143,21 @@ def main(args):
     
     device = torch.device(
         "cuda") if torch.cuda.is_available() else torch.device("cpu")
-    config_file = './src/mmdetection/configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py'
-    checkpoint_file = './checkpoint/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco_20210903_104808-b92c91f1.pth'
+    config_file = '../src/mmdetection/configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py'
+    checkpoint_file = '../checkpoint/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco_20210903_104808-b92c91f1.pth'
     pretrain_detector = init_detector(
         config_file, checkpoint_file, device=device)
     seg_module = Segmodule().to(device)
-    state_dic = torch.load('checkpoint/grounding_module.pth')
+    state_dic = torch.load('../checkpoint/grounding_module.pth')
     seg_module.load_state_dict(state_dic)
     # model = load_model_from_config(config, f"{args.ckpt}").to(device)
     # sampler = DDIMSampler(model)
-    version_dict = VERSION2SPECS[version]
+    print("Loading diffusion model")
+    version_dict = VERSION2SPECS["SDXL-Turbo"]
     state = init_st(version_dict, load_filter=True)
-    model = state["model"]
+    model = state["model"] #TODO fp16 or full
     load_model(model)
-    
+    print("Creating sampler")
     sampler = SubstepSampler(
         n_sample_steps=args.n_steps,
         num_steps=1000,
@@ -163,6 +166,12 @@ def main(args):
             target="sgm.modules.diffusionmodules.discretizer.LegacyDDPMDiscretization"
         ),
     )
+    
+    sampler.noise_sampler = SeededNoise(seed=args.seed)
+    prompt = "A cinematic shot of a baby racoon wearing an intricate italian priest robe."
+    out = sample(model, sampler, H=512, W=512, seed=args.seed, prompt=prompt, filter=state.get("filter"))
+    print(type(out), np.shape(out))
+    Image.fromarray(out[0]).save(f'{prompt}.png')
 
     os.makedirs(args.outdir, exist_ok=True)
     outpath = args.outdir
@@ -242,7 +251,7 @@ def main(args):
                 #                                     x_T=start_code)
                 # x_samples_ddim = model.decode_first_stage(samples_ddim)
                 
-                # TODO only batch size==1
+                # TODO only batch size==1 . see turbo.py line 126
                 assert batch_size==1
                 sampler.noise_sampler = SeededNoise(seed=args.seed)
                 out = sample(
@@ -388,8 +397,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--n_steps",
         type=int,
-        default=50,
-        help="number of ddim sampling steps",
+        default=2,
+        help="number of sampling steps",
     )
 
     parser.add_argument(
