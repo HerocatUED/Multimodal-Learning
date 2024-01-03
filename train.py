@@ -185,14 +185,12 @@ def main(args):
 
     batch_size = args.n_samples
 
-    iou = 0
+    # iou = 0
     for j in range(total_epoch):
         print('Epoch ' + str(j) + '/' + str(total_epoch))
         if not args.from_file:
-            text = "a photograph of a "
-            select_class_index1 = random.randint(0, len(class_train)-1)
-            trainclass = class_train[select_class_index1]
-            prompt = text + trainclass
+            trainclass = class_train[random.randint(0, len(class_train)-1)]
+            prompt = "a photograph of a " + trainclass
             print(f"Epoch {j}: prompt--{prompt}")
             assert prompt is not None
             data = [batch_size * [prompt]]
@@ -237,13 +235,13 @@ def main(args):
                 seg_result_list = []
                 for i in range(len(result)):
                     seg_result = result[i].pred_instances.masks
-                    seg_result_list.append(seg_result)
+                    # TODO: what if there are more than one things detected
+                    seg_result_list.append(seg_result[0].unsqueeze(0))
 
                 loss = []
 
                 class_index = class_coco[trainclass]
-                class_name = trainclass
-                query_text = "a photograph of a " + class_name
+                query_text = "a photograph of a " + trainclass
                 
                 c_split = model.cond_stage_model.tokenizer.tokenize(query_text)
                 sen_text_embedding = model.get_learned_conditioning(query_text)
@@ -258,41 +256,38 @@ def main(args):
 
                 for b_index in range(batch_size):
                     # if b_index==0 and j%200 ==0:
-                    # Image.fromarray(x_sample_list[b_index].astype(np.uint8)).save(os.path.join(ckpt_dir,
-                    #                                                 'training/'+ str(b_index)+'viz_sample_{0:05d}.png'.format(j)))
-
-                    class_name = trainclass
-                    pred_seg = torch.unsqueeze(total_pred_seg[b_index, trainclass, :, :], 0).unsqueeze(0)
+                    # Image.fromarray(x_sample_list[b_index].astype(np.uint8)).save(os.path.join(ckpt_dir, 'training/'+ str(b_index)+'viz_sample_{0:05d}.png'.format(j)))
+                    
+                    pred_seg = total_pred_seg[b_index]
 
                     label_pred_prob = torch.sigmoid(pred_seg)
-                    label_pred_mask = torch.zeros_like(
-                        label_pred_prob, dtype=torch.float32)
+                    label_pred_mask = torch.zeros_like(label_pred_prob, dtype=torch.float32)
                     label_pred_mask[label_pred_prob > 0.5] = 1
-                    annotation_pred = label_pred_mask[0][0].cpu()
+                    annotation_pred = label_pred_mask.cpu()
 
                     if len(seg_result_list[b_index]) == 0:
-                        print(
-                            "pretrain detector fail to detect the object in the class:", class_name)
+                        print("pretrain detector fail to detect the object in the class:", trainclass)
                     else:
-                        seg = seg_result_list[b_index][0]
-                        seg = seg.float().unsqueeze(0).unsqueeze(0).cuda()
-
+                        
+                        seg = seg_result_list[b_index]
+                        print("here", seg.size())
+                        seg = seg.float().cuda() # 1, 512, 512
+     
                         loss.append(loss_fn(pred_seg, seg))
-
-                        annotation_pred_gt = seg[0].cpu()
+                        
+                        annotation_pred_gt = seg.cpu()
 
                         # if b_index==0:
                         # if b_index==0 and j%200 ==0:
                         # print("\n")
-                        iou += IoU(annotation_pred_gt,
-                                    annotation_pred.unsqueeze(0))
-                        # print(IoU(annotation_pred_gt, annotation_pred.unsqueeze(0)))
+                        # iou += IoU(annotation_pred_gt, annotation_pred)
+                        # print('iou', IoU(annotation_pred_gt, annotation_pred))
                         # print(annotation_pred_gt.shape)
-                        # print(annotation_pred.unsqueeze(0).shape)
-                        viz_tensor2 = torch.cat([annotation_pred_gt, annotation_pred.unsqueeze(0)], axis=1)
+                        # print(annotation_pred.shape)
+                        viz_tensor2 = torch.cat([annotation_pred_gt, annotation_pred], axis=1)
 
-                        # torchvision.utils.save_image(viz_tensor2, os.path.join(ckpt_dir,
-                        #                                     'training/'+ str(b_index)+'viz_sample_{0:05d}_seg'.format(j)+class_name+'.png'), normalize=True, scale_each=True)
+                        torchvision.utils.save_image(viz_tensor2, os.path.join(ckpt_dir,
+                                                            'training/'+ str(b_index)+'viz_sample_{0:05d}_seg'.format(j)+trainclass+'.png'), normalize=True, scale_each=True)
                 if len(loss) == 0:
                     pass
                 else:
@@ -313,11 +308,11 @@ def main(args):
         # if j%5000==0  and j!=0:
         #     print("Saving latest checkpoint to",ckpt_dir)
         #     torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_'+str(j)+'.pth'))
-    print('\n\n\n')
-    print(iou/total_epoch)
-    print('\n\n\n')
-    with open('tmp/ious.txt', "a") as f:
-        f.write(str(iou/total_epoch)+'\n')
+    # print('\n\n\n')
+    # print(iou/total_epoch)
+    # print('\n\n\n')
+    # with open('tmp/ious.txt', "a") as f:
+    #     f.write(str(iou/total_epoch)+'\n')
 
 
 if __name__ == "__main__":

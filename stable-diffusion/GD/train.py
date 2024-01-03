@@ -106,12 +106,10 @@ def load_img(path):
     return 2.*image - 1.
 
 
-def main(args):
-    seed_everything(args.seed)
-
+def load_classes(args):
     print("Loading classes from COCO and PASCAL")
     class_coco = {}
-    f = open("data/coco_80_class.txt", "r")
+    f = open("./data/coco_80_class.txt", "r")
     count = 0
     for line in f.readlines():
         c_name = line.split("\n")[0]
@@ -131,8 +129,16 @@ def main(args):
         class_train = class_total[:15]
     elif args.data_mode == 2:
         class_train = class_total[15:]
+    return class_train, class_coco
 
-    config = OmegaConf.load(f"{args.config}")
+
+def main(args):
+    seed_everything(args.seed)
+
+    class_train, class_coco = load_classes(args)
+
+    # config = OmegaConf.load(f"{args.config}")
+    
     device = torch.device(
         "cuda") if torch.cuda.is_available() else torch.device("cpu")
     config_file = './src/mmdetection/configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py'
@@ -196,60 +202,22 @@ def main(args):
             [args.n_samples, args.C, args.H // args.f, args.W // args.f], device=device)
 
     batch_size = args.n_samples
-    train_data_choice = args.train_data
-    print('data choice:', train_data_choice)
-    iou = 0
+
+    # iou = 0
     for j in range(total_epoch):
         print('Epoch ' + str(j) + '/' + str(total_epoch))
         if not args.from_file:
-
-            trainclass_list = []
-            text = "a photograph of a "
-
-            if train_data_choice == "random":
-                single_or_two = random.randint(0, 1)
-
-                if single_or_two == 0:
-                    select_class_index1 = random.randint(0, len(class_train)-1)
-                    select_class1 = class_train[select_class_index1]
-                    prompt = text+select_class1
-                    trainclass_list.append(select_class1)
-
-                elif single_or_two == 1:
-                    select_class_index1 = random.randint(0, len(class_train)-1)
-                    select_class_index2 = random.randint(0, len(class_train)-1)
-                    select_class1 = class_train[select_class_index1]
-                    select_class2 = class_train[select_class_index2]
-                    trainclass_list.append(select_class1)
-                    trainclass_list.append(select_class2)
-                    prompt = text+select_class1+" and a "+select_class2
-
-            elif train_data_choice == "two":
-
-                select_class_index1 = random.randint(0, len(class_train)-1)
-                select_class_index2 = random.randint(0, len(class_train)-1)
-                select_class1 = class_train[select_class_index1]
-                select_class2 = class_train[select_class_index2]
-                trainclass_list.append(select_class1)
-                trainclass_list.append(select_class2)
-                prompt = text+select_class1+" and a "+select_class2
-
-            elif train_data_choice == "single":
-
-                select_class_index1 = random.randint(0, len(class_train)-1)
-                select_class1 = class_train[select_class_index1]
-                trainclass_list.append(select_class1)
-                prompt = text+select_class1
+            trainclass = class_train[random.randint(0, len(class_train)-1)]
+            prompt = "a photograph of a " + trainclass
             print(f"Epoch {j}: prompt--{prompt}")
-
             assert prompt is not None
             data = [batch_size * [prompt]]
-
         else:
             print(f"reading prompts from {args.from_file}")
             with open(args.from_file, "r") as f:
                 data = f.read().splitlines()
                 data = list(chunk(data, batch_size))
+                
         for n in trange(args.n_iter, desc="Sampling"):
             for prompts in tqdm(data, desc="data"):
                 clear_feature_dic()
@@ -261,109 +229,90 @@ def main(args):
                     prompts = list(prompts)
 
                 c = model.get_learned_conditioning(prompts)
-                shape = [args.C, args.H // args.f, args.W // args.f]
-                samples_ddim, _, _ = sampler.sample(S=args.ddim_steps,
-                                                    conditioning=c,
-                                                    batch_size=args.n_samples,
-                                                    shape=shape,
-                                                    verbose=False,
-                                                    unconditional_guidance_scale=args.scale,
-                                                    unconditional_conditioning=uc,
-                                                    eta=args.ddim_eta,
-                                                    x_T=start_code)
-
-                x_samples_ddim = model.decode_first_stage(samples_ddim)
+                
+                # shape = [args.C, args.H // args.f, args.W // args.f]
+                # samples_ddim, _, _ = sampler.sample(S=args.ddim_steps,
+                #                                     conditioning=c,
+                #                                     batch_size=args.n_samples,
+                #                                     shape=shape,
+                #                                     verbose=False,
+                #                                     unconditional_guidance_scale=args.scale,
+                #                                     unconditional_conditioning=uc,
+                #                                     eta=args.ddim_eta,
+                #                                     x_T=start_code)
+                # x_samples_ddim = model.decode_first_stage(samples_ddim)
+                
+                # TODO only batch size==1
+                assert batch_size==1
+                sampler.noise_sampler = SeededNoise(seed=args.seed)
+                out = sample(
+                    model, sampler, H=512, W=512, seed=args.seed, prompt=prompt, filter=state.get("filter")
+                )
+                
                 diffusion_features = get_feature_dic()
 
-                x_sample_list = []
-                for i in range(x_samples_ddim.size()[0]):
-                    x_sample = torch.clamp(
-                        (x_samples_ddim[i] + 1.0) / 2.0, min=0.0, max=1.0)
-                    x_sample = 255. * \
-                        rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
-                    x_sample_list.append(x_sample)
-
-    # prompt = "A cinematic shot of a baby racoon wearing an intricate italian priest robe."
-    # sampler.noise_sampler = SeededNoise(seed=args.seed)
-    # out = sample(
-    #     model, sampler, H=512, W=512, seed=args.seed, prompt=prompt, filter=state.get("filter")
-    # )
+                x_sample_list = [out]
+                # for i in range(x_samples_ddim.size()[0]):
+                #     x_sample = torch.clamp((x_samples_ddim[i] + 1.0) / 2.0, min=0.0, max=1.0)
+                #     x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
+                #     x_sample_list.append(x_sample)
 
                 result = inference_detector(pretrain_detector, x_sample_list)
                 seg_result_list = []
                 for i in range(len(result)):
                     seg_result = result[i].pred_instances.masks
-                    seg_result_list.append(seg_result)
+                    # TODO: what if there are more than one things detected
+                    seg_result_list.append(seg_result[0].unsqueeze(0))
 
                 loss = []
 
-                text_embeddding_list = []
-                for trainclass in trainclass_list:
+                query_text = "a photograph of a " + trainclass
+                
+                c_split = model.cond_stage_model.tokenizer.tokenize(query_text)
+                sen_text_embedding = model.get_learned_conditioning(query_text)
+                class_embedding = sen_text_embedding[:, 5:len(c_split)+1, :]
 
-                    class_index = class_coco[trainclass]
-                    class_name = trainclass
-                    query_text = "a photograph of a "+class_name
-                    c_split = model.cond_stage_model.tokenizer.tokenize(
-                        query_text)
+                if class_embedding.size()[1] > 1:
+                    class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
 
-                    sen_text_embedding = model.get_learned_conditioning(
-                        query_text)
+                class_embedding = class_embedding.repeat(batch_size, 1, 1)
 
-                    class_embedding = sen_text_embedding[:, 5:len(
-                        c_split)+1, :]
-
-                    if class_embedding.size()[1] > 1:
-                        class_embedding = torch.unsqueeze(
-                            class_embedding.mean(1), 1)
-
-                    text_embeddding_list.append(class_embedding)
-                text_embedding = torch.cat(text_embeddding_list, 1)
-                text_embedding = text_embedding.repeat(batch_size, 1, 1)
-
-                total_pred_seg = seg_module(diffusion_features, text_embedding)
+                total_pred_seg = seg_module(diffusion_features, class_embedding)
 
                 for b_index in range(batch_size):
                     # if b_index==0 and j%200 ==0:
-                    # Image.fromarray(x_sample_list[b_index].astype(np.uint8)).save(os.path.join(ckpt_dir,
-                    #                                                 'training/'+ str(b_index)+'viz_sample_{0:05d}.png'.format(j)))
-                    for train_class_index in range(len(trainclass_list)):
-                        trainclass = trainclass_list[train_class_index]
-                        class_index = class_coco[trainclass]
-                        class_name = trainclass
-                        pred_seg = torch.unsqueeze(
-                            total_pred_seg[b_index, train_class_index, :, :], 0).unsqueeze(0)
+                    # Image.fromarray(x_sample_list[b_index].astype(np.uint8)).save(os.path.join(ckpt_dir, 'training/'+ str(b_index)+'viz_sample_{0:05d}.png'.format(j)))
+                    
+                    pred_seg = total_pred_seg[b_index]
 
-                        label_pred_prob = torch.sigmoid(pred_seg)
-                        label_pred_mask = torch.zeros_like(
-                            label_pred_prob, dtype=torch.float32)
-                        label_pred_mask[label_pred_prob > 0.5] = 1
-                        annotation_pred = label_pred_mask[0][0].cpu()
+                    label_pred_prob = torch.sigmoid(pred_seg)
+                    label_pred_mask = torch.zeros_like(label_pred_prob, dtype=torch.float32)
+                    label_pred_mask[label_pred_prob > 0.5] = 1
+                    annotation_pred = label_pred_mask.cpu()
 
-                        if len(seg_result_list[b_index]) == 0:
-                            print(
-                                "pretrain detector fail to detect the object in the class:", class_name)
-                        else:
-                            seg = seg_result_list[b_index][0]
-                            seg = seg.float().unsqueeze(0).unsqueeze(0).cuda()
+                    if len(seg_result_list[b_index]) == 0:
+                        print("pretrain detector fail to detect the object in the class:", trainclass)
+                    else:
+                        
+                        seg = seg_result_list[b_index]
+                        print("here", seg.size())
+                        seg = seg.float().cuda() # 1, 512, 512
+     
+                        loss.append(loss_fn(pred_seg, seg))
+                        
+                        annotation_pred_gt = seg.cpu()
 
-                            loss.append(loss_fn(pred_seg, seg))
+                        # if b_index==0:
+                        # if b_index==0 and j%200 ==0:
+                        # print("\n")
+                        # iou += IoU(annotation_pred_gt, annotation_pred)
+                        # print('iou', IoU(annotation_pred_gt, annotation_pred))
+                        # print(annotation_pred_gt.shape)
+                        # print(annotation_pred.shape)
+                        viz_tensor2 = torch.cat([annotation_pred_gt, annotation_pred], axis=1)
 
-                            annotation_pred_gt = seg[0].cpu()
-
-                            # if b_index==0:
-                            # if b_index==0 and j%200 ==0:
-                            # print("\n")
-                            iou += IoU(annotation_pred_gt,
-                                       annotation_pred.unsqueeze(0))
-                            # print(IoU(annotation_pred_gt, annotation_pred.unsqueeze(0)))
-                            # print(annotation_pred_gt.shape)
-                            # print(annotation_pred.unsqueeze(0).shape)
-                            viz_tensor2 = torch.cat(
-                                [annotation_pred_gt, annotation_pred.unsqueeze(0)], axis=1)
-
-                            # torchvision.utils.save_image(viz_tensor2, os.path.join(ckpt_dir,
-                            #                                     'training/'+ str(b_index)+'viz_sample_{0:05d}_seg'.format(j)+class_name+'.png'), normalize=True, scale_each=True)
-                        break
+                        torchvision.utils.save_image(viz_tensor2, os.path.join(ckpt_dir,
+                                                            'training/'+ str(b_index)+'viz_sample_{0:05d}_seg'.format(j)+trainclass+'.png'), normalize=True, scale_each=True)
                 if len(loss) == 0:
                     pass
                 else:
@@ -375,10 +324,8 @@ def main(args):
                     total_loss.backward()
                     g_optim.step()
 
-                    writer.add_scalar(
-                        'train/loss', total_loss.item(), global_step=j)
-                    print(
-                        "Training step: {0:05d}/{1:05d}, loss: {2:0.4f}".format(j, total_epoch, total_loss))
+                    writer.add_scalar('train/loss', total_loss.item(), global_step=j)
+                    print("Training step: {0:05d}/{1:05d}, loss: {2:0.4f}".format(j, total_epoch, total_loss))
         # save checkpoint
         # if j%200 ==0 and j!=0:
         #     print("Saving latest checkpoint to",ckpt_dir)
@@ -386,11 +333,11 @@ def main(args):
         # if j%5000==0  and j!=0:
         #     print("Saving latest checkpoint to",ckpt_dir)
         #     torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_'+str(j)+'.pth'))
-    print('\n\n\n')
-    print(iou/total_epoch)
-    print('\n\n\n')
-    with open('tmp/ious.txt', "a") as f:
-        f.write(str(iou/total_epoch)+'\n')
+    # print('\n\n\n')
+    # print(iou/total_epoch)
+    # print('\n\n\n')
+    # with open('tmp/ious.txt', "a") as f:
+    #     f.write(str(iou/total_epoch)+'\n')
 
 
 if __name__ == "__main__":
