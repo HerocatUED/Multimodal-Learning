@@ -11,10 +11,10 @@ mkdir src
 cd src
 
 # CLIP
-git clone https://github.com/openai/CLIP.git
-cd CLIP
-pip install -e .
-cd ..
+# git clone https://github.com/openai/CLIP.git
+# cd CLIP
+# pip install -e .
+# cd ..
 
 # mmdetection
 mim install mmengine
