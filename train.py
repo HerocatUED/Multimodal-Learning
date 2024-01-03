@@ -18,6 +18,7 @@ import torch.nn as nn
 from datetime import datetime
 import torch
 import PIL
+from torch.utils.tensorboard import SummaryWriter
 from mmdet.apis import init_detector, inference_detector
 # from inference import init_detector, inference_detector
 import warnings
@@ -105,12 +106,10 @@ def load_img(path):
     return 2.*image - 1.
 
 
-def main(args):
-    seed_everything(args.seed)
-
+def load_classes(args):
     print("Loading classes from COCO and PASCAL")
     class_coco = {}
-    f = open("data/coco_80_class.txt", "r")
+    f = open("./data/coco_80_class.txt", "r")
     count = 0
     for line in f.readlines():
         c_name = line.split("\n")[0]
@@ -130,14 +129,19 @@ def main(args):
         class_train = class_total[:15]
     elif args.data_mode == 2:
         class_train = class_total[15:]
+    return class_train, class_coco
+
+
+def main(args):
+    seed_everything(args.seed)
+
+    class_train, class_coco = load_classes(args)
 
     config = OmegaConf.load(f"{args.config}")
-    device = torch.device(
-        "cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     config_file = './src/mmdetection/configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py'
     checkpoint_file = './checkpoint/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco_20210903_104808-b92c91f1.pth'
-    pretrain_detector = init_detector(
-        config_file, checkpoint_file, device=device)
+    pretrain_detector = init_detector(config_file, checkpoint_file, device=device)
     seg_module = Segmodule().to(device)
     state_dic = torch.load('checkpoint/grounding_module.pth')
     seg_module.load_state_dict(state_dic)
@@ -154,10 +158,9 @@ def main(args):
     os.makedirs(save_dir, exist_ok=True)
     ckpt_dir = os.path.join(save_dir, args.save_name+'-'+current_time)
     os.makedirs(ckpt_dir, exist_ok=True)
-    from torch.utils.tensorboard import SummaryWriter
-    writer = SummaryWriter(log_dir=os.path.join(ckpt_dir, 'logs'))
     os.makedirs(os.path.join(ckpt_dir, 'training'), exist_ok=True)
-
+    
+    writer = SummaryWriter(log_dir=os.path.join(ckpt_dir, 'logs'))
     learning_rate = 1e-5
     total_epoch = 3000
     g_optim = optim.Adam(
@@ -178,64 +181,25 @@ def main(args):
     start_code = None
     if args.fixed_code:
         print('start_code')
-        start_code = torch.randn(
-            [args.n_samples, args.C, args.H // args.f, args.W // args.f], device=device)
+        start_code = torch.randn([args.n_samples, args.C, args.H // args.f, args.W // args.f], device=device)
 
     batch_size = args.n_samples
-    train_data_choice = args.train_data
-    print('data choice:', train_data_choice)
+
     iou = 0
     for j in range(total_epoch):
         print('Epoch ' + str(j) + '/' + str(total_epoch))
         if not args.from_file:
-
-            trainclass_list = []
-            text = "a photograph of a "
-
-            if train_data_choice == "random":
-                single_or_two = random.randint(0, 1)
-
-                if single_or_two == 0:
-                    select_class_index1 = random.randint(0, len(class_train)-1)
-                    select_class1 = class_train[select_class_index1]
-                    prompt = text+select_class1
-                    trainclass_list.append(select_class1)
-
-                elif single_or_two == 1:
-                    select_class_index1 = random.randint(0, len(class_train)-1)
-                    select_class_index2 = random.randint(0, len(class_train)-1)
-                    select_class1 = class_train[select_class_index1]
-                    select_class2 = class_train[select_class_index2]
-                    trainclass_list.append(select_class1)
-                    trainclass_list.append(select_class2)
-                    prompt = text+select_class1+" and a "+select_class2
-
-            elif train_data_choice == "two":
-
-                select_class_index1 = random.randint(0, len(class_train)-1)
-                select_class_index2 = random.randint(0, len(class_train)-1)
-                select_class1 = class_train[select_class_index1]
-                select_class2 = class_train[select_class_index2]
-                trainclass_list.append(select_class1)
-                trainclass_list.append(select_class2)
-                prompt = text+select_class1+" and a "+select_class2
-
-            elif train_data_choice == "single":
-
-                select_class_index1 = random.randint(0, len(class_train)-1)
-                select_class1 = class_train[select_class_index1]
-                trainclass_list.append(select_class1)
-                prompt = text+select_class1
+            trainclass = class_train[random.randint(0, len(class_train)-1)]
+            prompt = "a photograph of a " + trainclass
             print(f"Epoch {j}: prompt--{prompt}")
-
             assert prompt is not None
             data = [batch_size * [prompt]]
-
         else:
             print(f"reading prompts from {args.from_file}")
             with open(args.from_file, "r") as f:
                 data = f.read().splitlines()
                 data = list(chunk(data, batch_size))
+                
         for n in trange(args.n_iter, desc="Sampling"):
             for prompts in tqdm(data, desc="data"):
                 clear_feature_dic()
@@ -263,10 +227,8 @@ def main(args):
 
                 x_sample_list = []
                 for i in range(x_samples_ddim.size()[0]):
-                    x_sample = torch.clamp(
-                        (x_samples_ddim[i] + 1.0) / 2.0, min=0.0, max=1.0)
-                    x_sample = 255. * \
-                        rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
+                    x_sample = torch.clamp((x_samples_ddim[i] + 1.0) / 2.0, min=0.0, max=1.0)
+                    x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
                     x_sample_list.append(x_sample)
 
                 result = inference_detector(pretrain_detector, x_sample_list)
@@ -277,73 +239,53 @@ def main(args):
 
                 loss = []
 
-                text_embeddding_list = []
-                for trainclass in trainclass_list:
+                class_index = class_coco[trainclass]
+                query_text = "a photograph of a " + trainclass
+                
+                c_split = model.cond_stage_model.tokenizer.tokenize(query_text)
+                sen_text_embedding = model.get_learned_conditioning(query_text)
+                class_embedding = sen_text_embedding[:, 5:len(c_split)+1, :]
 
-                    class_index = class_coco[trainclass]
-                    class_name = trainclass
-                    query_text = "a photograph of a "+class_name
-                    c_split = model.cond_stage_model.tokenizer.tokenize(
-                        query_text)
+                if class_embedding.size()[1] > 1:
+                    class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
 
-                    sen_text_embedding = model.get_learned_conditioning(
-                        query_text)
+                class_embedding = class_embedding.repeat(batch_size, 1, 1)
 
-                    class_embedding = sen_text_embedding[:, 5:len(
-                        c_split)+1, :]
-
-                    if class_embedding.size()[1] > 1:
-                        class_embedding = torch.unsqueeze(
-                            class_embedding.mean(1), 1)
-
-                    text_embeddding_list.append(class_embedding)
-                text_embedding = torch.cat(text_embeddding_list, 1)
-                text_embedding = text_embedding.repeat(batch_size, 1, 1)
-
-                total_pred_seg = seg_module(diffusion_features, text_embedding)
+                total_pred_seg = seg_module(diffusion_features, class_embedding)
 
                 for b_index in range(batch_size):
                     # if b_index==0 and j%200 ==0:
                     # Image.fromarray(x_sample_list[b_index].astype(np.uint8)).save(os.path.join(ckpt_dir,
                     #                                                 'training/'+ str(b_index)+'viz_sample_{0:05d}.png'.format(j)))
-                    for train_class_index in range(len(trainclass_list)):
-                        trainclass = trainclass_list[train_class_index]
-                        class_index = class_coco[trainclass]
-                        class_name = trainclass
-                        pred_seg = torch.unsqueeze(
-                            total_pred_seg[b_index, train_class_index, :, :], 0).unsqueeze(0)
 
-                        label_pred_prob = torch.sigmoid(pred_seg)
-                        label_pred_mask = torch.zeros_like(
-                            label_pred_prob, dtype=torch.float32)
-                        label_pred_mask[label_pred_prob > 0.5] = 1
-                        annotation_pred = label_pred_mask[0][0].cpu()
+                    pred_seg = torch.unsqueeze(total_pred_seg[b_index, trainclass, :, :], 0).unsqueeze(0)
 
-                        if len(seg_result_list[b_index]) == 0:
-                            print(
-                                "pretrain detector fail to detect the object in the class:", class_name)
-                        else:
-                            seg = seg_result_list[b_index][0]
-                            seg = seg.float().unsqueeze(0).unsqueeze(0).cuda()
+                    label_pred_prob = torch.sigmoid(pred_seg)
+                    label_pred_mask = torch.zeros_like(label_pred_prob, dtype=torch.float32)
+                    label_pred_mask[label_pred_prob > 0.5] = 1
+                    annotation_pred = label_pred_mask[0][0].cpu()
 
-                            loss.append(loss_fn(pred_seg, seg))
+                    if len(seg_result_list[b_index]) == 0:
+                        print("pretrain detector fail to detect the object in the class:", trainclass)
+                    else:
+                        seg = seg_result_list[b_index][0]
+                        seg = seg.float().unsqueeze(0).unsqueeze(0).cuda()
 
-                            annotation_pred_gt = seg[0].cpu()
+                        loss.append(loss_fn(pred_seg, seg))
 
-                            # if b_index==0:
-                            # if b_index==0 and j%200 ==0:
-                            # print("\n")
-                            iou += IoU(annotation_pred_gt,
-                                       annotation_pred.unsqueeze(0))
-                            # print(IoU(annotation_pred_gt, annotation_pred.unsqueeze(0)))
-                            # print(annotation_pred_gt.shape)
-                            # print(annotation_pred.unsqueeze(0).shape)
-                            viz_tensor2 = torch.cat(
-                                [annotation_pred_gt, annotation_pred.unsqueeze(0)], axis=1)
+                        annotation_pred_gt = seg[0].cpu()
 
-                            # torchvision.utils.save_image(viz_tensor2, os.path.join(ckpt_dir,
-                            #                                     'training/'+ str(b_index)+'viz_sample_{0:05d}_seg'.format(j)+class_name+'.png'), normalize=True, scale_each=True)
-                        break
+                        # if b_index==0:
+                        # if b_index==0 and j%200 ==0:
+                        # print("\n")
+                        iou += IoU(annotation_pred_gt, annotation_pred.unsqueeze(0))
+                        # print(IoU(annotation_pred_gt, annotation_pred.unsqueeze(0)))
+                        # print(annotation_pred_gt.shape)
+                        # print(annotation_pred.unsqueeze(0).shape)
+                        viz_tensor2 = torch.cat([annotation_pred_gt, annotation_pred.unsqueeze(0)], axis=1)
+
+                        # torchvision.utils.save_image(viz_tensor2, os.path.join(ckpt_dir,
+                        #                                     'training/'+ str(b_index)+'viz_sample_{0:05d}_seg'.format(j)+class_name+'.png'), normalize=True, scale_each=True)
                 if len(loss) == 0:
                     pass
                 else:
@@ -355,10 +297,8 @@ def main(args):
                     total_loss.backward()
                     g_optim.step()
 
-                    writer.add_scalar(
-                        'train/loss', total_loss.item(), global_step=j)
-                    print(
-                        "Training step: {0:05d}/{1:05d}, loss: {2:0.4f}".format(j, total_epoch, total_loss))
+                    writer.add_scalar('train/loss', total_loss.item(), global_step=j)
+                    print("Training step: {0:05d}/{1:05d}, loss: {2:0.4f}".format(j, total_epoch, total_loss))
         # save checkpoint
         # if j%200 ==0 and j!=0:
         #     print("Saving latest checkpoint to",ckpt_dir)
@@ -534,12 +474,6 @@ if __name__ == "__main__":
         type=int,
         help="the class split: 1,2,3",
         default=1
-    )
-    parser.add_argument(
-        "--train_data",
-        type=str,
-        help="the type of training data: single, two, random",
-        default="single"
     )
     parser.add_argument(
         "--data_mode",

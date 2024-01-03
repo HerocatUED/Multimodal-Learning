@@ -1,0 +1,8 @@
+CUDA_VISIBLE_DEVICES="6" \
+python test.py --sd_ckpt 'checkpoint/stable_diffusion.ckpt' \
+--grounding_ckpt 'checkpoint/grounding_module.pth' \
+--prompt "a photograph of skeleton" \
+--category "skeleton"
+
+CUDA_VISIBLE_DEVICES="7" \
+python train.py --class_split 1 --train_data random --save_name pascal_1_random
