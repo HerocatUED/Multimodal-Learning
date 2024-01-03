@@ -18,6 +18,18 @@ from ...util import exists
 
 logpy = logging.getLogger(__name__)
 
+all_feature_dic={}
+
+def clear_feature_dic():
+    global all_feature_dic
+    all_feature_dic={}
+    all_feature_dic["low"]=[]
+    all_feature_dic["mid"]=[]
+    all_feature_dic["high"]=[]
+    all_feature_dic["highest"]=[]
+def get_feature_dic():
+    global all_feature_dic
+    return all_feature_dic
 
 class AttentionPool2d(nn.Module):
     """
@@ -839,15 +851,65 @@ class UNetModel(nn.Module):
         if self.num_classes is not None:
             assert y.shape[0] == x.shape[0]
             emb = emb + self.label_emb(y)
-
+        
+        if timesteps[0]==1:
+            flag_time=True
+        else:
+            flag_time=False
+        
         h = x
-        for module in self.input_blocks:
-            h = module(h, emb, context)
-            hs.append(h)
+        # down
+        if flag_time:
+            for module in self.input_blocks:
+                h = module(h, emb, context)
+                hs.append(h)
+                reshape_h=h.reshape(int(h.size()[0]/2),int(h.size()[1]*2),h.size()[2],h.size()[3])
+                
+                if h.size()[2]==8:
+                    all_feature_dic["low"].append(reshape_h)
+                elif h.size()[2]==16:
+                    all_feature_dic["mid"].append(reshape_h)
+                elif h.size()[2]==32:
+                    all_feature_dic["high"].append(reshape_h)
+                elif h.size()[2]==64:
+                    all_feature_dic["highest"].append(reshape_h)
+        else: 
+            for module in self.input_blocks:
+                h = module(h, emb, context)
+                hs.append(h)
+        # middle            
         h = self.middle_block(h, emb, context)
-        for module in self.output_blocks:
-            h = th.cat([h, hs.pop()], dim=1)
-            h = module(h, emb, context)
+        if flag_time:
+            reshape_h=h.reshape(int(h.size()[0]/2),int(h.size()[1]*2),h.size()[2],h.size()[3])
+            if h.size()[2]==8:
+                all_feature_dic["low"].append(reshape_h)
+            elif h.size()[2]==16:
+                all_feature_dic["mid"].append(reshape_h)
+            elif h.size()[2]==32:
+                all_feature_dic["high"].append(reshape_h)
+            elif h.size()[2]==64:
+                all_feature_dic["highest"].append(reshape_h)
+        # up
+        if flag_time:
+            for module in self.output_blocks:
+                h = th.cat([h, hs.pop()], dim=1)
+                h = module(h, emb, context)
+                reshape_h=h.reshape(int(h.size()[0]/2),int(h.size()[1]*2),h.size()[2],h.size()[3])
+                
+                if h.size()[2]==8:
+                    all_feature_dic["low"].append(reshape_h)
+                elif h.size()[2]==16:
+                    all_feature_dic["mid"].append(reshape_h)
+                elif h.size()[2]==32:
+                    all_feature_dic["high"].append(reshape_h)
+                elif h.size()[2]==64:
+                    all_feature_dic["highest"].append(reshape_h)
+                
+        else:
+            for module in self.output_blocks:
+                h = th.cat([h, hs.pop()], dim=1)
+                h = module(h, emb, context)          
+        
         h = h.type(x.dtype)
 
         return self.out(h)
