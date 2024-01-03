@@ -1,4 +1,4 @@
-from streamlit_helpers import *
+from scripts.demo.streamlit_helpers import *
 from st_keyup import st_keyup
 from sgm.modules.diffusionmodules.sampling import EulerAncestralSampler
 
@@ -99,6 +99,7 @@ def sample(
     W=1024,
     seed=0,
     filter=None,
+    condition_only=False
 ):
     F = 8
     C = 4
@@ -113,6 +114,7 @@ def sample(
             "target_height": H,
         },
         prompt=prompt,
+        negative_prompt=""
     )
 
     if seed is None:
@@ -126,7 +128,9 @@ def sample(
                 [1],
             )
             c = model.conditioner(batch)
-            uc = None
+            uc = model.conditioner(batch_uc)
+            if condition_only:
+                return c, uc
             randn = seeded_randn(shape, seed)
 
             def denoiser(input, sigma, c):

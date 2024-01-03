@@ -230,14 +230,15 @@ def main(args):
         for n in trange(args.n_iter, desc="Sampling"):
             for prompts in tqdm(data, desc="data"):
                 clear_feature_dic()
-                uc = None
+                
+                # uc = None
 
-                if args.scale != 1.0:
-                    uc = model.get_learned_conditioning(batch_size * [""])
-                if isinstance(prompts, tuple):
-                    prompts = list(prompts)
+                # if args.scale != 1.0:
+                #     uc = model.get_learned_conditioning(batch_size * [""])
+                # if isinstance(prompts, tuple):
+                #     prompts = list(prompts)
 
-                c = model.get_learned_conditioning(prompts)
+                # c = model.get_learned_conditioning(prompts)
                 
                 # shape = [args.C, args.H // args.f, args.W // args.f]
                 # samples_ddim, _, _ = sampler.sample(S=args.ddim_steps,
@@ -251,20 +252,17 @@ def main(args):
                 #                                     x_T=start_code)
                 # x_samples_ddim = model.decode_first_stage(samples_ddim)
                 
-                # TODO only batch size==1 . see turbo.py line 126
+                # TODO only batch size==1 . see turbo.py line 126 and sample.py do_sample
                 assert batch_size==1
                 sampler.noise_sampler = SeededNoise(seed=args.seed)
                 out = sample(
-                    model, sampler, H=512, W=512, seed=args.seed, prompt=prompt, filter=state.get("filter")
+                    model, sampler, H=512, W=512, seed=args.seed, 
+                    prompt=prompt, filter=state.get("filter")
                 )
                 
                 diffusion_features = get_feature_dic()
 
                 x_sample_list = [out]
-                # for i in range(x_samples_ddim.size()[0]):
-                #     x_sample = torch.clamp((x_samples_ddim[i] + 1.0) / 2.0, min=0.0, max=1.0)
-                #     x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
-                #     x_sample_list.append(x_sample)
 
                 result = inference_detector(pretrain_detector, x_sample_list)
                 seg_result_list = []
@@ -272,14 +270,12 @@ def main(args):
                     seg_result = result[i].pred_instances.masks
                     # TODO: what if there are more than one things detected
                     seg_result_list.append(seg_result[0].unsqueeze(0))
-
-                loss = []
-
-                query_text = "a photograph of a " + trainclass
-                
-                c_split = model.cond_stage_model.tokenizer.tokenize(query_text)
-                sen_text_embedding = model.get_learned_conditioning(query_text)
-                class_embedding = sen_text_embedding[:, 5:len(c_split)+1, :]
+               
+                class_embedding = sample(
+                    model, sampler, condition_only=True, H=512, W=512, seed=args.seed, 
+                    prompt=trainclass, filter=state.get("filter")
+                )
+                print(class_embedding.shape)
 
                 if class_embedding.size()[1] > 1:
                     class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
@@ -287,6 +283,8 @@ def main(args):
                 class_embedding = class_embedding.repeat(batch_size, 1, 1)
 
                 total_pred_seg = seg_module(diffusion_features, class_embedding)
+                
+                loss = []
 
                 for b_index in range(batch_size):
                     # if b_index==0 and j%200 ==0:
@@ -430,6 +428,7 @@ if __name__ == "__main__":
         type=int,
         default=8,
         help="downsampling factor, most often 8 or 16",
+        # NOTE: only 8, modify in turbo.sample line 104
     )
     parser.add_argument(
         "--n_samples",
@@ -478,6 +477,7 @@ if __name__ == "__main__":
         type=int,
         default=4,
         help="latent channels",
+        # NOTE: only 8, modify in turbo.sample line 105
     )
 
     parser.add_argument(
