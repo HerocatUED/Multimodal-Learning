@@ -1,10 +1,11 @@
 import os
 import argparse
 from evaluate import IoU
-from ldm.models.seg_module import Segmodule
-from ldm.modules.diffusionmodules.openaimodel import clear_feature_dic, get_feature_dic
-from ldm.models.diffusion.ddim import DDIMSampler
-from ldm.util import instantiate_from_config
+from seg_module import Segmodule
+from ..sgm.modules.diffusionmodules.openaimodel import clear_feature_dic, get_feature_dic
+# from ..sgm.models.diffusion.ddim import DDIMSampler
+from ..scripts.demo.turbo import *
+from ..sgm.util import instantiate_from_config
 import torch.optim as optim
 import random
 import torchvision
@@ -141,8 +142,21 @@ def main(args):
     seg_module = Segmodule().to(device)
     state_dic = torch.load('checkpoint/grounding_module.pth')
     seg_module.load_state_dict(state_dic)
-    model = load_model_from_config(config, f"{args.ckpt}").to(device)
-    sampler = DDIMSampler(model)
+    # model = load_model_from_config(config, f"{args.ckpt}").to(device)
+    # sampler = DDIMSampler(model)
+    version_dict = VERSION2SPECS[version]
+    state = init_st(version_dict, load_filter=True)
+    model = state["model"]
+    load_model(model)
+    
+    sampler = SubstepSampler(
+        n_sample_steps=args.n_steps,
+        num_steps=1000,
+        eta=1.0,
+        discretization_config=dict(
+            target="sgm.modules.diffusionmodules.discretizer.LegacyDDPMDiscretization"
+        ),
+    )
 
     os.makedirs(args.outdir, exist_ok=True)
     outpath = args.outdir
@@ -268,6 +282,12 @@ def main(args):
                     x_sample = 255. * \
                         rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
                     x_sample_list.append(x_sample)
+
+    # prompt = "A cinematic shot of a baby racoon wearing an intricate italian priest robe."
+    # sampler.noise_sampler = SeededNoise(seed=args.seed)
+    # out = sample(
+    #     model, sampler, H=512, W=512, seed=args.seed, prompt=prompt, filter=state.get("filter")
+    # )
 
                 result = inference_detector(pretrain_detector, x_sample_list)
                 seg_result_list = []
@@ -411,8 +431,15 @@ if __name__ == "__main__":
         help="do not save indiviual samples. For speed measurements.",
     )
 
+    # parser.add_argument(
+    #     "--ddim_steps",
+    #     type=int,
+    #     default=50,
+    #     help="number of ddim sampling steps",
+    # )
+    
     parser.add_argument(
-        "--ddim_steps",
+        "--n_steps",
         type=int,
         default=50,
         help="number of ddim sampling steps",
