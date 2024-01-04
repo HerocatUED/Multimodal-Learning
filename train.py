@@ -141,8 +141,8 @@ def main(args):
     
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
-    config_file = '../src/mmdetection/configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py'
-    checkpoint_file = '../checkpoint/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco_20210903_104808-b92c91f1.pth'
+    config_file = 'src/mmdetection/configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py'
+    checkpoint_file = 'checkpoints/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco_20210903_104808-b92c91f1.pth'
     
     pretrain_detector = init_detector(config_file, checkpoint_file, device=device)
     
@@ -181,7 +181,7 @@ def main(args):
     
     batch_size = args.n_samples
     learning_rate = 1e-5
-    total_iter = 500000
+    total_iter = 50000
     g_optim = optim.Adam(
         [{"params": seg_module.parameters()},],
         lr=learning_rate
