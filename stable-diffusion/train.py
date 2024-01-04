@@ -278,7 +278,7 @@ def main(args):
                     model, sampler, condition_only=True, H=512, W=512, seed=args.seed, 
                     prompt=trainclass, filter=state.get("filter")
                 )
-                class_embedding = class_embedding['crossattn'][:, :, :768] # 1, 77, 2048
+                class_embedding = class_embedding['crossattn']
                 if class_embedding.size()[1] > 1:
                     class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
                 class_embedding = class_embedding.repeat(batch_size, 1, 1)

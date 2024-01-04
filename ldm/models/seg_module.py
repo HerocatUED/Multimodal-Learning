@@ -397,30 +397,31 @@ class Segmodule(nn.Module):
         
     def forward(self,diffusion_feature,text_embedding):
 
-        image_feature=self._prepare_features(diffusion_feature)
+        image_feature=self._prepare_features(diffusion_feature) # 1, 240, 64, 64
 
-        final_image_feature=F.interpolate(image_feature, size=512, mode='bilinear', align_corners=False)
+        final_image_feature=F.interpolate(image_feature, size=512, mode='bilinear', align_corners=False) # 1, 240, 512, 512
         b=final_image_feature.size()[0]
 
         patch_size = 4
         patch_number=int(image_feature.size()[2]/patch_size)
 
         image_feature = torch.nn.functional.unfold(image_feature, patch_size, stride=patch_size).transpose(1,2).contiguous()
+        # now is 1, 256, 3840
+        image_feature=rearrange(image_feature, 'b n d -> (b n) d  ') # 256, 3840
+        text_embedding=rearrange(text_embedding, 'b n d -> (b n) d  ') # 1, 768
 
-        image_feature=rearrange(image_feature, 'b n d -> (b n) d  ')
-        text_embedding=rearrange(text_embedding, 'b n d -> (b n) d  ')
-
-        q = self.to_q(text_embedding)
-        k = self.to_k(image_feature)
+        q = self.to_q(text_embedding) # 1, 512
+        k = self.to_k(image_feature) # 256, 512
         
-        output_query = self.transfromer_decoder(q, k, None)
+        output_query = self.transfromer_decoder(q, k, None) # 1, 512
         
-        output_query=rearrange(output_query, '(b n) d -> b n d',b=b)
+        output_query=rearrange(output_query, '(b n) d -> b n d',b=b) # 1, 1, 512
         
-        mask_embedding=self.mlp(output_query)
+        mask_embedding=self.mlp(output_query) # 1, 1, 240
         seg_result=einsum('b d h w, b n d -> b n h w', final_image_feature, mask_embedding)
         
-        return seg_result
+        return seg_result # 1, 1, 512, 512
+    
     def _prepare_features(self, features, upsample='bilinear'):
         self.low_feature_size = 16
         self.mid_feature_size = 32
@@ -428,19 +429,19 @@ class Segmodule(nn.Module):
         
         low_features = [
             F.interpolate(i, size=self.low_feature_size, mode=upsample, align_corners=False) for i in features["low"]
-        ]
-        low_features = torch.cat(low_features, dim=1)
+        ] # list, 6x[1, 2*1280, 8, 8] -> 6x[1, 2*1280, 16, 16]
+        low_features = torch.cat(low_features, dim=1) # 1, 6*2*1280, 16, 16
         
         mid_features = [
              F.interpolate(i, size=self.mid_feature_size, mode=upsample, align_corners=False) for i in features["mid"]
-        ]
-        mid_features = torch.cat(mid_features, dim=1)
+        ] # list
+        mid_features = torch.cat(mid_features, dim=1) # 1, 14080, 32, 32
         
         high_features = [
              F.interpolate(i, size=self.high_feature_size, mode=upsample, align_corners=False) for i in features["high"]
-        ]
-        high_features = torch.cat(high_features, dim=1)
-        highest_features=torch.cat(features["highest"],dim=1)
+        ] # list
+        high_features = torch.cat(high_features, dim=1) # 1, 8320, 64, 64
+        highest_features=torch.cat(features["highest"],dim=1) # 1, 5120, 64, 64
         features_dict = {
             'low': low_features,
             'mid': mid_features,
@@ -449,21 +450,21 @@ class Segmodule(nn.Module):
         }
         
         
-        low_feat = self.low_feature_conv(features_dict['low'])
+        low_feat = self.low_feature_conv(features_dict['low']) # 1, 16, 16, 16
         low_feat = F.interpolate(low_feat, size=self.mid_feature_size, mode='bilinear', align_corners=False)
-        
-        mid_feat = self.mid_feature_conv(features_dict['mid'])
-        mid_feat = torch.cat([low_feat, mid_feat], dim=1)
-        mid_feat = self.mid_feature_mix_conv(mid_feat, y=None)
+        # low_feat 1, 16, 32, 32
+        mid_feat = self.mid_feature_conv(features_dict['mid']) # 1, 32, 32, 32
+        mid_feat = torch.cat([low_feat, mid_feat], dim=1) # 1, 48, 32, 32
+        mid_feat = self.mid_feature_mix_conv(mid_feat, y=None) # 1, 48, 32, 32
         mid_feat = F.interpolate(mid_feat, size=self.high_feature_size, mode='bilinear', align_corners=False)
-        
-        high_feat = self.high_feature_conv(features_dict['high'])
-        high_feat = torch.cat([mid_feat, high_feat], dim=1)
-        high_feat = self.high_feature_mix_conv(high_feat, y=None)
-        
-        highest_feat=self.highest_feature_conv(features_dict['highest'])
-        highest_feat=torch.cat([high_feat,highest_feat],dim=1)
-        highest_feat=self.highest_feature_mix_conv(highest_feat,y=None)
+        # mid_feat 1, 48, 64, 64
+        high_feat = self.high_feature_conv(features_dict['high']) # 1, 64, 64, 64
+        high_feat = torch.cat([mid_feat, high_feat], dim=1) # 1, 112, 64, 64
+        high_feat = self.high_feature_mix_conv(high_feat, y=None) # 1, 112, 64, 64
+        # high_feat 1, 112, 64, 64
+        highest_feat=self.highest_feature_conv(features_dict['highest']) # 1, 128, 64, 64
+        highest_feat=torch.cat([high_feat,highest_feat],dim=1) # 1, 240, 64, 64
+        highest_feat=self.highest_feature_mix_conv(highest_feat,y=None) # 1, 240, 64, 64
         
         return highest_feat
    
