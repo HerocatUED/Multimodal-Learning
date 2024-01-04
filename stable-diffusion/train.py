@@ -166,6 +166,7 @@ def main(args):
             target="sgm.modules.diffusionmodules.discretizer.LegacyDDPMDiscretization"
         ),
     )
+    sampler.noise_sampler = SeededNoise(seed=args.seed)
     
     # sampler.noise_sampler = SeededNoise(seed=args.seed)
     # prompt = "A cinematic shot of a baby racoon wearing an intricate italian priest robe."
@@ -173,10 +174,7 @@ def main(args):
     # Image.fromarray(out[0]).save(f'{prompt}.png')
 
     os.makedirs(args.outdir, exist_ok=True)
-    outpath = args.outdir
     batch_size = args.n_samples
-    sample_path = os.path.join(outpath, "samples")
-    os.makedirs(sample_path, exist_ok=True)
     current_time = datetime.now().strftime('%b%d_%H-%M-%S')
     save_dir = 'outputs/exps/'
     os.makedirs(save_dir, exist_ok=True)
@@ -228,52 +226,21 @@ def main(args):
                 
         for n in trange(args.n_iter, desc="Sampling"):
             for prompts in data:
-                
                 # class_index = class_coco[trainclass]
-                
-                clear_feature_dic()
-                
-                # uc = None
-
-                # if args.scale != 1.0:
-                #     uc = model.get_learned_conditioning(batch_size * [""])
-                # if isinstance(prompts, tuple):
-                #     prompts = list(prompts)
-
-                # c = model.get_learned_conditioning(prompts)
-                
-                # shape = [args.C, args.H // args.f, args.W // args.f]
-                # samples_ddim, _, _ = sampler.sample(S=args.ddim_steps,
-                #                                     conditioning=c,
-                #                                     batch_size=args.n_samples,
-                #                                     shape=shape,
-                #                                     verbose=False,
-                #                                     unconditional_guidance_scale=args.scale,
-                #                                     unconditional_conditioning=uc,
-                #                                     eta=args.ddim_eta,
-                #                                     x_T=start_code)
-                # x_samples_ddim = model.decode_first_stage(samples_ddim)
-                
                 # TODO only batch size==1 . see turbo.py line 126 and sample.py do_sample
                 assert batch_size==1
-                
-                sampler.noise_sampler = SeededNoise(seed=args.seed) # TODO no seedednoise to get different 
+                # generate images
                 out = sample(
                     model, sampler, H=512, W=512, seed=args.seed, 
                     prompt=prompts[0], filter=state.get("filter")
                 )
-                Image.fromarray(out[0]).save(f'{prompts[0]}.png')
-                diffusion_features = get_feature_dic()
-
                 x_sample_list = [out[0]]
-
                 result = inference_detector(pretrain_detector, x_sample_list)
                 seg_result_list = []
                 for i in range(len(result)):
                     seg_result = result[i].pred_instances.masks
-                    # TODO: what if there are more than one things detected
                     seg_result_list.append(seg_result[0].unsqueeze(0))
-               
+                # get class embedding
                 class_embedding, uc = sample(
                     model, sampler, condition_only=True, H=512, W=512, seed=args.seed, 
                     prompt=trainclass, filter=state.get("filter")
@@ -282,14 +249,12 @@ def main(args):
                 if class_embedding.size()[1] > 1:
                     class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
                 class_embedding = class_embedding.repeat(batch_size, 1, 1)
-                
+                # seg_module
+                diffusion_features = get_feature_dic()
                 total_pred_seg = seg_module(diffusion_features, class_embedding)
                 
                 loss = []
                 for b_index in range(batch_size):
-                    # if b_index==0 and j%200 ==0:
-                    # Image.fromarray(x_sample_list[b_index].astype(np.uint8)).save(os.path.join(ckpt_dir, 'training/'+ str(b_index)+'viz_sample_{0:05d}.png'.format(j)))
-                    
                     pred_seg = total_pred_seg[b_index]
 
                     label_pred_prob = torch.sigmoid(pred_seg)
@@ -300,26 +265,19 @@ def main(args):
                     if len(seg_result_list[b_index]) == 0:
                         print("pretrain detector fail to detect the object in the class:", trainclass)
                     else:
-                        
                         seg = seg_result_list[b_index]
-                        
                         seg = seg.float().cuda() # 1, 512, 512
-     
                         loss.append(loss_fn(pred_seg, seg))
-                        
                         annotation_pred_gt = seg.cpu()
-
-                        # if b_index==0:
-                        # if b_index==0 and j%200 ==0:
-                        # print("\n")
                         # iou += IoU(annotation_pred_gt, annotation_pred)
                         # print('iou', IoU(annotation_pred_gt, annotation_pred))
-
                         viz_tensor2 = torch.cat([annotation_pred_gt, annotation_pred], axis=1)
-                        if  j%200 ==0:
+                        if  j % 100 ==0:
+                            dir_path = os.path.join(ckpt_dir, 'training/'+ str(b_index))
                             torchvision.utils.save_image(viz_tensor2, 
-                                os.path.join(ckpt_dir, 'training/'+ str(b_index)+'viz_sample_{0:05d}_seg'.format(j)+trainclass+'.png'), 
+                                dir_path +'viz_sample_{0:05d}_seg'.format(j)+trainclass+'.png', 
                                 normalize=True, scale_each=True)
+                            Image.fromarray(out[0]).save(f'{dir_path + prompts[0]}.png')
                             
                 if len(loss) > 0:
                     total_loss = 0
@@ -332,13 +290,15 @@ def main(args):
 
                     writer.add_scalar('train/loss', total_loss.item(), global_step=j)
                     print("Training step: {0:05d}/{1:05d}, loss: {2:0.4f}".format(j, total_iter, total_loss))
+        
         # save checkpoint
-        if j%200 ==0 and j!=0:
+        if j % 200 == 0 and j != 0:
             print("Saving latest checkpoint to",ckpt_dir)
             torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_latest.pth'))
-        if j%5000==0  and j!=0:
+        if j % 5000 == 0  and j != 0:
             print("Saving latest checkpoint to",ckpt_dir)
             torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_'+str(j)+'.pth'))
+    
     # print('\n\n\n')
     # print(iou/total_epoch)
     # print('\n\n\n')

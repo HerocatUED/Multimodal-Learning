@@ -860,31 +860,31 @@ class UNetModel(nn.Module):
             h = module(h, emb, context)
             hs.append(h)
             if h.size()[2] == 16:
-                all_feature_dic["low"].append(h)
+                all_feature_dic["low"].append(h.clone().float())
             elif h.size()[2] == 32:
-                all_feature_dic["mid"].append(h)
+                all_feature_dic["mid"].append(h.clone().float())
             elif h.size()[2] == 64:
-                all_feature_dic["high"].append(h)
+                all_feature_dic["high"].append(h.clone().float())
                 
         # middle            
         h = self.middle_block(h, emb, context)
         if h.size()[2] == 16:
-            all_feature_dic["low"].append(h)
+            all_feature_dic["low"].append(h.clone().float())
         elif h.size()[2] == 32:
-            all_feature_dic["mid"].append(h)
+            all_feature_dic["mid"].append(h.clone().float())
         elif h.size()[2] == 64:
-            all_feature_dic["high"].append(h)
+            all_feature_dic["high"].append(h.clone().float())
             
         # up
         for module in self.output_blocks:
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb, context)
             if h.size()[2] == 16:
-                all_feature_dic["low"].append(h)
+                all_feature_dic["low"].append(h.clone().float())
             elif h.size()[2] == 32:
-                all_feature_dic["mid"].append(h)
+                all_feature_dic["mid"].append(h.clone().float())
             elif h.size()[2] == 64:
-                all_feature_dic["high"].append(h)
+                all_feature_dic["high"].append(h.clone().float())
         
         h = h.type(x.dtype)
 
