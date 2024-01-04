@@ -2,6 +2,22 @@
 .vscode
 checkpoint
 src
-openai
+openai-local
 outputs
 tmp
+
+# extensions
+*.egg-info
+*.py[cod]
+
+# envs
+.pt13
+.pt2
+
+# directories
+/checkpoints
+/dist
+/outputs
+/build
+/src
+/openai

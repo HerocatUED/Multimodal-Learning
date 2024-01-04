@@ -4,8 +4,5 @@ python test.py --sd_ckpt 'checkpoint/stable_diffusion.ckpt' \
 --prompt "a photograph of cat and dog" \
 --category "cat"
 
-CUDA_VISIBLE_DEVICES="2" \
-python train.py --class_split 1 --train_data random --save_name pascal_1_random
-
 # if huggingface is not accessible
 HF_ENDPOINT=https://hf-mirror.com python train.py

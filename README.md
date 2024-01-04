@@ -43,3 +43,4 @@ python test.py --sd_ckpt 'xxx/stable_diffusion.ckpt' \
 	
 ## Acknowledgements
 Many thanks to the code bases from [Stable Diffusion](https://github.com/CompVis/stable-diffusion), [CLIP](https://github.com/openai/CLIP), [taming-transformers](https://github.com/CompVis/taming-transformers), [mmdetection](https://github.com/open-mmlab/mmdetection)
+, [Stablility-AI:generative-models]()
