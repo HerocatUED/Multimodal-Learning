@@ -167,11 +167,10 @@ def main(args):
         ),
     )
     
-    sampler.noise_sampler = SeededNoise(seed=args.seed)
-    prompt = "A cinematic shot of a baby racoon wearing an intricate italian priest robe."
-    out = sample(model, sampler, H=512, W=512, seed=args.seed, prompt=prompt, filter=state.get("filter"))
-    print(type(out), np.shape(out))
-    Image.fromarray(out[0]).save(f'{prompt}.png')
+    # sampler.noise_sampler = SeededNoise(seed=args.seed)
+    # prompt = "A cinematic shot of a baby racoon wearing an intricate italian priest robe."
+    # out = sample(model, sampler, H=512, W=512, seed=args.seed, prompt=prompt, filter=state.get("filter"))
+    # Image.fromarray(out[0]).save(f'{prompt}.png')
 
     os.makedirs(args.outdir, exist_ok=True)
     outpath = args.outdir
@@ -207,8 +206,7 @@ def main(args):
     start_code = None
     if args.fixed_code:
         print('start_code')
-        start_code = torch.randn(
-            [args.n_samples, args.C, args.H // args.f, args.W // args.f], device=device)
+        start_code = torch.randn([args.n_samples, args.C, args.H // args.f, args.W // args.f], device=device)
 
     batch_size = args.n_samples
 
@@ -222,13 +220,17 @@ def main(args):
             assert prompt is not None
             data = [batch_size * [prompt]]
         else:
+            raise NotImplementedError
             print(f"reading prompts from {args.from_file}")
             with open(args.from_file, "r") as f:
                 data = f.read().splitlines()
                 data = list(chunk(data, batch_size))
                 
         for n in trange(args.n_iter, desc="Sampling"):
-            for prompts in tqdm(data, desc="data"):
+            for prompts in data:
+                
+                # class_index = class_coco[trainclass]
+                
                 clear_feature_dic()
                 
                 # uc = None
@@ -254,15 +256,16 @@ def main(args):
                 
                 # TODO only batch size==1 . see turbo.py line 126 and sample.py do_sample
                 assert batch_size==1
-                sampler.noise_sampler = SeededNoise(seed=args.seed)
+                
+                sampler.noise_sampler = SeededNoise(seed=args.seed) # TODO no seedednoise to get different 
                 out = sample(
                     model, sampler, H=512, W=512, seed=args.seed, 
-                    prompt=prompt, filter=state.get("filter")
+                    prompt=prompts[0], filter=state.get("filter")
                 )
-                
+                Image.fromarray(out[0]).save(f'{prompts[0]}.png')
                 diffusion_features = get_feature_dic()
 
-                x_sample_list = [out]
+                x_sample_list = [out[0]]
 
                 result = inference_detector(pretrain_detector, x_sample_list)
                 seg_result_list = []
@@ -271,21 +274,18 @@ def main(args):
                     # TODO: what if there are more than one things detected
                     seg_result_list.append(seg_result[0].unsqueeze(0))
                
-                class_embedding = sample(
+                class_embedding, uc = sample(
                     model, sampler, condition_only=True, H=512, W=512, seed=args.seed, 
                     prompt=trainclass, filter=state.get("filter")
                 )
-                print(class_embedding.shape)
-
+                class_embedding = class_embedding['crossattn'][:, :, :768] # 1, 77, 2048
                 if class_embedding.size()[1] > 1:
                     class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
-
                 class_embedding = class_embedding.repeat(batch_size, 1, 1)
-
+                
                 total_pred_seg = seg_module(diffusion_features, class_embedding)
                 
                 loss = []
-
                 for b_index in range(batch_size):
                     # if b_index==0 and j%200 ==0:
                     # Image.fromarray(x_sample_list[b_index].astype(np.uint8)).save(os.path.join(ckpt_dir, 'training/'+ str(b_index)+'viz_sample_{0:05d}.png'.format(j)))
@@ -302,7 +302,7 @@ def main(args):
                     else:
                         
                         seg = seg_result_list[b_index]
-                        print("here", seg.size())
+                        
                         seg = seg.float().cuda() # 1, 512, 512
      
                         loss.append(loss_fn(pred_seg, seg))
@@ -320,9 +320,7 @@ def main(args):
 
                         torchvision.utils.save_image(viz_tensor2, os.path.join(ckpt_dir,
                                                             'training/'+ str(b_index)+'viz_sample_{0:05d}_seg'.format(j)+trainclass+'.png'), normalize=True, scale_each=True)
-                if len(loss) == 0:
-                    pass
-                else:
+                if len(loss) > 0:
                     total_loss = 0
                     for i in range(len(loss)):
                         total_loss += loss[i]
@@ -395,7 +393,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--n_steps",
         type=int,
-        default=2,
+        default=1,
         help="number of sampling steps",
     )
 

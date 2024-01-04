@@ -888,18 +888,19 @@ class UNetModel(nn.Module):
             emb = emb + self.label_emb(y)
 
         h = x.type(self.dtype)
-        
+        print("timesteps", timesteps)
         if timesteps[0]==1:
             flag_time=True
         else:
             flag_time=False
         
         if flag_time:
+            print("down")
             for module in self.input_blocks:
                 h = module(h, emb, context,class_token_index=class_token_index)
                 hs.append(h)
                 reshape_h=h.reshape(int(h.size()[0]/2),int(h.size()[1]*2),h.size()[2],h.size()[3])
-                
+                print(h.size())
                 if h.size()[2]==8:
                     all_feature_dic["low"].append(reshape_h)
                 elif h.size()[2]==16:
@@ -915,7 +916,8 @@ class UNetModel(nn.Module):
                         
         h = self.middle_block(h, emb, context,class_token_index=class_token_index)
         if flag_time:
-            
+            print("middle")
+            print(h.size())
             reshape_h=h.reshape(int(h.size()[0]/2),int(h.size()[1]*2),h.size()[2],h.size()[3])
             
             if h.size()[2]==8:
@@ -927,10 +929,11 @@ class UNetModel(nn.Module):
             elif h.size()[2]==64:
                 all_feature_dic["highest"].append(reshape_h)
         if flag_time:
+            print("up")
             for module in self.output_blocks:
                 h = th.cat([h, hs.pop()], dim=1)
                 h = module(h, emb, context,class_token_index=class_token_index)
-            
+                print(h.size())
                 reshape_h=h.reshape(int(h.size()[0]/2),int(h.size()[1]*2),h.size()[2],h.size()[3])
                 
                 if h.size()[2]==8:

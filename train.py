@@ -244,11 +244,11 @@ def main(args):
                 query_text = "a photograph of a " + trainclass
                 
                 c_split = model.cond_stage_model.tokenizer.tokenize(query_text)
-                sen_text_embedding = model.get_learned_conditioning(query_text)
+                sen_text_embedding = model.get_learned_conditioning(query_text) # 1, 77, 768
                 class_embedding = sen_text_embedding[:, 5:len(c_split)+1, :]
 
                 if class_embedding.size()[1] > 1:
-                    class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
+                    class_embedding = torch.unsqueeze(class_embedding.mean(1), 1) # 1, 1, 768
 
                 class_embedding = class_embedding.repeat(batch_size, 1, 1)
 
