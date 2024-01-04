@@ -426,7 +426,7 @@ class Segmodule(nn.Module):
         self.low_feature_size = 16
         self.mid_feature_size = 32
         self.high_feature_size = 64
-        
+        # take batch size == 1 as example
         low_features = [
             F.interpolate(i, size=self.low_feature_size, mode=upsample, align_corners=False) for i in features["low"]
         ] # list, 6x[1, 2*1280, 8, 8] -> 6x[1, 2*1280, 16, 16]

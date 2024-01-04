@@ -148,8 +148,8 @@ def main(args):
     pretrain_detector = init_detector(
         config_file, checkpoint_file, device=device)
     seg_module = Segmodule().to(device)
-    state_dic = torch.load('../checkpoint/grounding_module.pth')
-    seg_module.load_state_dict(state_dic)
+    # state_dic = torch.load('../checkpoint/grounding_module.pth')
+    # seg_module.load_state_dict(state_dic)
     # model = load_model_from_config(config, f"{args.ckpt}").to(device)
     # sampler = DDIMSampler(model)
     print("Loading diffusion model")
@@ -180,14 +180,14 @@ def main(args):
     current_time = datetime.now().strftime('%b%d_%H-%M-%S')
     save_dir = 'outputs/exps/'
     os.makedirs(save_dir, exist_ok=True)
-    ckpt_dir = os.path.join(save_dir, args.save_name+'-'+current_time)
+    ckpt_dir = os.path.join(save_dir, 'ckpts-'+current_time)
     os.makedirs(ckpt_dir, exist_ok=True)
     from torch.utils.tensorboard import SummaryWriter
     writer = SummaryWriter(log_dir=os.path.join(ckpt_dir, 'logs'))
     os.makedirs(os.path.join(ckpt_dir, 'training'), exist_ok=True)
 
     learning_rate = 1e-5
-    total_epoch = 3000
+    total_iter = 500000
     g_optim = optim.Adam(
         [{"params": seg_module.parameters()},],
         lr=learning_rate
@@ -201,7 +201,7 @@ def main(args):
             output_device=device, broadcast_buffers=False)
 
     print('***********************   begin   **********************************')
-    print("Start training with maximum {0} iterations.".format(total_epoch))
+    print(f"Start training with maximum {total_iter} iterations.")
 
     start_code = None
     if args.fixed_code:
@@ -211,12 +211,12 @@ def main(args):
     batch_size = args.n_samples
 
     # iou = 0
-    for j in range(total_epoch):
-        print('Epoch ' + str(j) + '/' + str(total_epoch))
+    for j in range(total_iter):
+        print('Iter ' + str(j) + '/' + str(total_iter))
         if not args.from_file:
             trainclass = class_train[random.randint(0, len(class_train)-1)]
             prompt = "a photograph of a " + trainclass
-            print(f"Epoch {j}: prompt--{prompt}")
+            print(f"Iter {j}: prompt--{prompt}")
             assert prompt is not None
             data = [batch_size * [prompt]]
         else:
@@ -314,12 +314,13 @@ def main(args):
                         # print("\n")
                         # iou += IoU(annotation_pred_gt, annotation_pred)
                         # print('iou', IoU(annotation_pred_gt, annotation_pred))
-                        # print(annotation_pred_gt.shape)
-                        # print(annotation_pred.shape)
-                        viz_tensor2 = torch.cat([annotation_pred_gt, annotation_pred], axis=1)
 
-                        torchvision.utils.save_image(viz_tensor2, os.path.join(ckpt_dir,
-                                                            'training/'+ str(b_index)+'viz_sample_{0:05d}_seg'.format(j)+trainclass+'.png'), normalize=True, scale_each=True)
+                        viz_tensor2 = torch.cat([annotation_pred_gt, annotation_pred], axis=1)
+                        if  j%200 ==0:
+                            torchvision.utils.save_image(viz_tensor2, 
+                                os.path.join(ckpt_dir, 'training/'+ str(b_index)+'viz_sample_{0:05d}_seg'.format(j)+trainclass+'.png'), 
+                                normalize=True, scale_each=True)
+                            
                 if len(loss) > 0:
                     total_loss = 0
                     for i in range(len(loss)):
@@ -330,14 +331,14 @@ def main(args):
                     g_optim.step()
 
                     writer.add_scalar('train/loss', total_loss.item(), global_step=j)
-                    print("Training step: {0:05d}/{1:05d}, loss: {2:0.4f}".format(j, total_epoch, total_loss))
+                    print("Training step: {0:05d}/{1:05d}, loss: {2:0.4f}".format(j, total_iter, total_loss))
         # save checkpoint
-        # if j%200 ==0 and j!=0:
-        #     print("Saving latest checkpoint to",ckpt_dir)
-        #     torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_latest.pth'))
-        # if j%5000==0  and j!=0:
-        #     print("Saving latest checkpoint to",ckpt_dir)
-        #     torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_'+str(j)+'.pth'))
+        if j%200 ==0 and j!=0:
+            print("Saving latest checkpoint to",ckpt_dir)
+            torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_latest.pth'))
+        if j%5000==0  and j!=0:
+            print("Saving latest checkpoint to",ckpt_dir)
+            torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_'+str(j)+'.pth'))
     # print('\n\n\n')
     # print(iou/total_epoch)
     # print('\n\n\n')

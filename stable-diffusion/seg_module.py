@@ -324,21 +324,21 @@ class Segmodule(nn.Module):
         dropout_rate=0):
         super().__init__()
 
-        low_feature_channel = 32
-        mid_feature_channel = 64
-        high_feature_channel = 128
+        self.low_feature_size = 32
+        self.mid_feature_size = 64
+        self.high_feature_size = 128
         
         self.low_feature_conv = nn.Sequential(
-            nn.Conv2d(1280*5+640, low_feature_channel, kernel_size=1, bias=False),
+            nn.Conv2d(1280*5+640, self.low_feature_size, kernel_size=1, bias=False),
 
         )
         self.mid_feature_conv = nn.Sequential(
-            nn.Conv2d(1280+640*4+320, mid_feature_channel, kernel_size=1, bias=False),
+            nn.Conv2d(1280+640*4+320, self.mid_feature_size, kernel_size=1, bias=False),
 
         )
         self.mid_feature_mix_conv = SegBlock(
-                                in_channels=low_feature_channel+mid_feature_channel,
-                                out_channels=low_feature_channel+mid_feature_channel,
+                                in_channels=self.low_feature_size+self.mid_feature_size,
+                                out_channels=self.low_feature_size+self.mid_feature_size,
                                 con_channels=128,
                                 which_conv=functools.partial(SNConv2d,
                                     kernel_size=3, padding=1,
@@ -351,11 +351,11 @@ class Segmodule(nn.Module):
                                 upsample=False,
                             )
         self.high_feature_conv = nn.Sequential(
-            nn.Conv2d(640+320*6, high_feature_channel, kernel_size=1, bias=False),
+            nn.Conv2d(640+320*6, self.high_feature_size, kernel_size=1, bias=False),
         )
         self.high_feature_mix_conv = SegBlock(
-                                in_channels=low_feature_channel+mid_feature_channel+high_feature_channel,
-                                out_channels=low_feature_channel+mid_feature_channel+high_feature_channel,
+                                in_channels=self.low_feature_size+self.mid_feature_size+self.high_feature_size,
+                                out_channels=self.low_feature_size+self.mid_feature_size+self.high_feature_size,
                                 con_channels=128,
                                 which_conv=functools.partial(SNConv2d,
                                     kernel_size=3, padding=1,
@@ -368,7 +368,7 @@ class Segmodule(nn.Module):
                                 upsample=False,
                             )
         
-        feature_dim=low_feature_channel + mid_feature_channel + high_feature_channel
+        feature_dim=self.low_feature_size + self.mid_feature_size + self.high_feature_size
         query_dim=feature_dim*16
         decoder_layer = TransformerDecoderLayer(embedding_dim, num_heads, hidden_dim, dropout_rate)
         self.transfromer_decoder = TransformerDecoder(decoder_layer, num_layers)
@@ -405,10 +405,6 @@ class Segmodule(nn.Module):
         return seg_result
     
     def _prepare_features(self, features, upsample='bilinear'):
-        self.low_feature_size = 32
-        self.mid_feature_size = 64
-        self.high_feature_size = 128
-        
         low_features = [
             F.interpolate(i, size=self.low_feature_size, mode=upsample, align_corners=False) for i in features["low"]
         ]
@@ -431,18 +427,18 @@ class Segmodule(nn.Module):
             'high': high_features,
         }
         
-        
-        low_feat = self.low_feature_conv(features_dict['low'])
+        # take batch size == 1 as example
+        low_feat = self.low_feature_conv(features_dict['low']) # 1, 32, 32, 32
         low_feat = F.interpolate(low_feat, size=self.mid_feature_size, mode='bilinear', align_corners=False)
-        
-        mid_feat = self.mid_feature_conv(features_dict['mid'])
-        mid_feat = torch.cat([low_feat, mid_feat], dim=1)
-        mid_feat = self.mid_feature_mix_conv(mid_feat, y=None)
+        # low_feat 1, 32, 64, 64
+        mid_feat = self.mid_feature_conv(features_dict['mid']) # 1, 64, 64, 64
+        mid_feat = torch.cat([low_feat, mid_feat], dim=1) # 1, 96, 64, 64
+        mid_feat = self.mid_feature_mix_conv(mid_feat, y=None) # 1, 96, 64, 64
         mid_feat = F.interpolate(mid_feat, size=self.high_feature_size, mode='bilinear', align_corners=False)
-        
-        high_feat = self.high_feature_conv(features_dict['high'])
-        high_feat = torch.cat([mid_feat, high_feat], dim=1)
-        high_feat = self.high_feature_mix_conv(high_feat, y=None)
+        # mid_feat 1, 96, 128, 128
+        high_feat = self.high_feature_conv(features_dict['high']) # 1, 128, 128, 128
+        high_feat = torch.cat([mid_feat, high_feat], dim=1) # 1, 224, 128, 128 
+        high_feat = self.high_feature_mix_conv(high_feat, y=None) # 1, 224, 128, 128 
         
         
         return high_feat
