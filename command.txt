@@ -1,8 +1,8 @@
-CUDA_VISIBLE_DEVICES="2" \
-python test.py --sd_ckpt 'checkpoint/stable_diffusion.ckpt' \
---grounding_ckpt 'checkpoint/grounding_module.pth' \
---prompt "a photograph of cat and dog" \
---category "cat"
-
 # if huggingface is not accessible
 HF_ENDPOINT=https://hf-mirror.com python train.py
+
+CUDA_VISIBLE_DEVICES="2" \
+HF_ENDPOINT=https://hf-mirror.com python test.py \
+--grounding_ckpt 'outputs/exps/ckpts-Jan04_22-24-32/checkpoint_latest.pth' \
+--prompt "a photograph of cat and dog" \
+--category "cat"
