@@ -1,97 +1,29 @@
 import os
 import argparse
+import random
+import PIL
+import torchvision
+import torch
+import warnings
+
+import numpy as np
+import torch.nn as nn
+import torch.optim as optim
+
+from itertools import islice
+from PIL import Image
+from datetime import datetime
+from scripts.demo.turbo import *
+from sgm.modules.diffusionmodules.openaimodel import get_feature_dic
+from sgm.util import instantiate_from_config
+from pytorch_lightning import seed_everything
+from mmdet.apis import init_detector, inference_detector
+# from inference import init_detector, inference_detector
+from utils import chunk
 from evaluate import IoU
 from seg_module import Segmodule
 
-os.sys.path.append("..")
-from sgm.modules.diffusionmodules.openaimodel import clear_feature_dic, get_feature_dic
-# from ..sgm.models.diffusion.ddim import DDIMSampler
-from scripts.demo.turbo import *
-from sgm.util import instantiate_from_config
-import torch.optim as optim
-import random
-import torchvision
-from einops import rearrange
-from itertools import islice
-from tqdm import tqdm, trange
-from PIL import Image
-from omegaconf import OmegaConf
-import numpy as np
-import torch.nn as nn
-from datetime import datetime
-import torch
-import PIL
-from mmdet.apis import init_detector, inference_detector
-# from inference import init_detector, inference_detector
-import warnings
-from pytorch_lightning import seed_everything
 warnings.filterwarnings("ignore")
-
-
-def chunk(it, size):
-    it = iter(it)
-    return iter(lambda: tuple(islice(it, size)), ())
-
-
-class VOCColorize(object):
-    def __init__(self, n):
-        self.cmap = color_map(n)
-
-    def __call__(self, gray_image):
-        size = gray_image.shape
-        color_image = np.zeros((3, size[0], size[1]), dtype=np.uint8)
-
-        for label in range(0, len(self.cmap)):
-            mask = (label == gray_image)
-            color_image[0][mask] = self.cmap[label][0]
-            color_image[1][mask] = self.cmap[label][1]
-            color_image[2][mask] = self.cmap[label][2]
-
-        return color_image
-
-
-def color_map(N, normalized=False):
-    def bitget(byteval, idx):
-        return ((byteval & (1 << idx)) != 0)
-
-    dtype = 'float32' if normalized else 'uint8'
-    cmap = np.zeros((N, 3), dtype=dtype)
-    for i in range(N):
-        r = g = b = 0
-        c = i
-        for j in range(8):
-            r = r | (bitget(c, 0) << 7-j)
-            g = g | (bitget(c, 1) << 7-j)
-            b = b | (bitget(c, 2) << 7-j)
-            c = c >> 3
-
-        cmap[i] = np.array([r, g, b])
-
-    cmap = cmap/255 if normalized else cmap
-    return cmap
-
-
-def load_model_from_config(config, ckpt, verbose=False):
-    print(f"Loading model from {ckpt}")
-    pl_sd = torch.load(ckpt, map_location="cpu")
-    if "global_step" in pl_sd:
-        print(f"Global Step: {pl_sd['global_step']}")
-    sd = pl_sd["state_dict"]
-    model = instantiate_from_config(config.model)
-    m, u = model.load_state_dict(sd, strict=False)
-
-    for name, parameter in model.named_parameters():
-        parameter.requires_grad = False
-
-    if len(m) > 0 and verbose:
-        print("missing keys:")
-        print(m)
-    if len(u) > 0 and verbose:
-        print("unexpected keys:")
-        print(u)
-
-    model.cuda()
-    return model
 
 
 def load_img(path):
@@ -135,6 +67,7 @@ def load_classes(args):
 
 
 def main(args):
+    
     seed_everything(args.seed)
 
     class_train, class_coco = load_classes(args)
@@ -219,26 +152,31 @@ def main(args):
                 
         for prompts in data:
             # class_index = class_coco[trainclass]
+            
             # generate images
             out = sample(
-                model, sampler, H=512, W=512, seed=args.seed, 
+                model, sampler, H=args.H, W=args.W, seed=args.seed, 
                 prompt=prompts[0], filter=state.get("filter")
             )
             x_sample_list = [out[0]]
+            
+            # detector
             result = inference_detector(pretrain_detector, x_sample_list)
             seg_result_list = []
             for i in range(len(result)):
                 seg_result = result[i].pred_instances.masks
                 seg_result_list.append(seg_result[0].unsqueeze(0))
+            
             # get class embedding
             class_embedding, uc = sample(
-                model, sampler, condition_only=True, H=512, W=512, seed=args.seed, 
+                model, sampler, condition_only=True, H=args.H, W=args.W, seed=args.seed, 
                 prompt=trainclass, filter=state.get("filter")
             )
             class_embedding = class_embedding['crossattn']
             if class_embedding.size()[1] > 1:
                 class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
             class_embedding = class_embedding.repeat(batch_size, 1, 1)
+            
             # seg_module
             diffusion_features = get_feature_dic()
             total_pred_seg = seg_module(diffusion_features, class_embedding)
