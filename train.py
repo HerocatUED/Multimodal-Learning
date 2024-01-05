@@ -10,6 +10,7 @@ import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 
+from torch.utils.tensorboard import SummaryWriter
 from PIL import Image
 from datetime import datetime
 from scripts.demo.turbo import *
@@ -47,7 +48,7 @@ def load_classes(args):
         class_coco[c_name] = count
         count += 1
 
-    pascal_file = "configs/data/VOC/class_split"+str(args.class_split)+".csv"
+    pascal_file = f"configs/data/VOC/class_split{args.class_split}.csv"
     class_total = []
     f = open(pascal_file, "r")
     count = 0
@@ -105,7 +106,7 @@ def main(args):
     os.makedirs(save_dir, exist_ok=True)
     ckpt_dir = os.path.join(save_dir, 'ckpts-'+current_time)
     os.makedirs(ckpt_dir, exist_ok=True)
-    from torch.utils.tensorboard import SummaryWriter
+    
     writer = SummaryWriter(log_dir=os.path.join(ckpt_dir, 'logs'))
     os.makedirs(os.path.join(ckpt_dir, 'training'), exist_ok=True)
     
