@@ -48,60 +48,59 @@ def main(args):
     
     with torch.no_grad():
         with precision_scope("cuda"):
-            with model.ema_scope():
-                prompt = args.prompt
-                trainclass = args.category
+            prompt = args.prompt
+            trainclass = args.category
+            
+            if not args.from_file:
+                assert prompt is not None
+                data = [batch_size * [prompt]]
+
+            else:
+                print(f"reading prompts from {args.from_file}")
+                with open(args.from_file, "r") as f:
+                    data = f.read().splitlines()
+                    data = list(chunk(data, batch_size))
+
+            sample_path = os.path.join(outpath, "samples")
+            os.makedirs(sample_path, exist_ok=True)
+            
+            for prompts in data:
+                # generate images
+                out = sample(
+                    model, sampler, H=args.H, W=args.W, seed=args.seed, 
+                    prompt=prompts[0], filter=state.get("filter")
+                )
+                img = out[0]
                 
-                if not args.from_file:
-                    assert prompt is not None
-                    data = [batch_size * [prompt]]
+                Image.fromarray(img).save(f"{sample_path}/{args.prompt}.png")
 
-                else:
-                    print(f"reading prompts from {args.from_file}")
-                    with open(args.from_file, "r") as f:
-                        data = f.read().splitlines()
-                        data = list(chunk(data, batch_size))
+                # get class embedding
+                class_embedding, uc = sample(
+                    model, sampler, condition_only=True, H=args.H, W=args.W, seed=args.seed, 
+                    prompt=trainclass, filter=state.get("filter")
+                )
+                class_embedding = class_embedding['crossattn']
+                if class_embedding.size()[1] > 1:
+                    class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
+                class_embedding = class_embedding.repeat(batch_size, 1, 1)
 
-                sample_path = os.path.join(outpath, "samples")
-                os.makedirs(sample_path, exist_ok=True)
-                
-                for prompts in data:
-                    # generate images
-                    out = sample(
-                        model, sampler, H=args.H, W=args.W, seed=args.seed, 
-                        prompt=prompts[0], filter=state.get("filter")
-                    )
-                    img = out[0]
-                    
-                    Image.fromarray(img).save(f"{sample_path}/{args.prompt}.png")
+                # seg_module
+                diffusion_features = get_feature_dic()
+                total_pred_seg = seg_module(diffusion_features, class_embedding)
 
-                    # get class embedding
-                    class_embedding, uc = sample(
-                        model, sampler, condition_only=True, H=args.H, W=args.W, seed=args.seed, 
-                        prompt=trainclass, filter=state.get("filter")
-                    )
-                    class_embedding = class_embedding['crossattn']
-                    if class_embedding.size()[1] > 1:
-                        class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
-                    class_embedding = class_embedding.repeat(batch_size, 1, 1)
+                pred_seg = total_pred_seg[0]
+                label_pred_prob = torch.sigmoid(pred_seg)
+                label_pred_mask = torch.zeros_like(label_pred_prob, dtype=torch.float32)
+                label_pred_mask[label_pred_prob > 0.5] = 1
+                annotation_pred = label_pred_mask[0][0].cpu()
 
-                    # seg_module
-                    diffusion_features = get_feature_dic()
-                    total_pred_seg = seg_module(diffusion_features, class_embedding)
+                mask = annotation_pred.numpy()
+                mask = np.expand_dims(mask, 0)
+                done_image_mask = plot_mask(img, mask, alpha=0.9, indexlist=[0])
+                cv2.imwrite(os.path.join(f"{sample_path}/{args.prompt}_mask.png"), done_image_mask)
 
-                    pred_seg = total_pred_seg[0]
-                    label_pred_prob = torch.sigmoid(pred_seg)
-                    label_pred_mask = torch.zeros_like(label_pred_prob, dtype=torch.float32)
-                    label_pred_mask[label_pred_prob > 0.5] = 1
-                    annotation_pred = label_pred_mask[0][0].cpu()
-
-                    mask = annotation_pred.numpy()
-                    mask = np.expand_dims(mask, 0)
-                    done_image_mask = plot_mask(img, mask, alpha=0.9, indexlist=[0])
-                    cv2.imwrite(os.path.join(f"{sample_path}/{args.prompt}_mask.png"), done_image_mask)
-
-                    torchvision.utils.save_image(annotation_pred, os.path.join(
-                        f"{sample_path}/{args.prompt}_seg.png"), normalize=True, scale_each=True)
+                torchvision.utils.save_image(annotation_pred, os.path.join(
+                    f"{sample_path}/{args.prompt}_seg.png"), normalize=True, scale_each=True)
 
 
 if __name__ == "__main__":
