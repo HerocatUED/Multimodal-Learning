@@ -10,17 +10,14 @@ import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 
-from itertools import islice
 from PIL import Image
 from datetime import datetime
 from scripts.demo.turbo import *
 from sgm.modules.diffusionmodules.openaimodel import get_feature_dic
-from sgm.util import instantiate_from_config
 from pytorch_lightning import seed_everything
 from mmdet.apis import init_detector, inference_detector
 # from inference import init_detector, inference_detector
-from utils import chunk
-from evaluate import IoU
+from utils import chunk, IoU
 from seg_module import Segmodule
 
 warnings.filterwarnings("ignore")

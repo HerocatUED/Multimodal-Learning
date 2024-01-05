@@ -1,23 +1,15 @@
-
-from functools import partial
-import math
-from typing import Iterable
-from black import diff
-from torch import nn, einsum
-import numpy as np
-import torch as th
-import torch.nn as nn
-import functools
-import torch.nn.functional as F
-
-import math
-import torch
-import torch.nn.functional as F
-from torch import nn, Tensor
-from einops import rearrange
 import copy
+import torch
+import functools
+
+import torch.nn as nn
+import torch.nn.functional as F
+
+from torch import nn
+from einops import rearrange
+from torch import einsum
 from torchvision import transforms
-from torchvision.transforms import InterpolationMode
+
 
 class MLP(nn.Module):
     """Very simple multi-layer perceptron (also called FFN)"""
@@ -34,10 +26,13 @@ class MLP(nn.Module):
         for i, layer in enumerate(self.layers):
             x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
         return x
+    
+    
 def resize_fn(img, size):
-    return transforms.Resize(size, InterpolationMode.BICUBIC)(
+    return transforms.Resize(size, transforms.InterpolationMode.BICUBIC)(
             transforms.ToPILImage()(img))
-import math
+
+
 def _get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
@@ -51,6 +46,7 @@ def _get_activation_fn(activation):
     if activation == "glu":
         return F.glu
     raise RuntimeError(F"activation should be relu/gelu, not {activation}.")
+
 
 class TransformerDecoder(nn.Module):
 
@@ -106,6 +102,7 @@ class TransformerDecoderLayer(nn.Module):
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt2))))
         tgt = tgt + self.dropout3(tgt2)
         return tgt
+    
 # Projection of x onto y
 def proj(x, y):
   return torch.mm(y, x.t()) * y / torch.mm(y, y.t())
@@ -115,6 +112,7 @@ def gram_schmidt(x, ys):
   for y in ys:
     x = x - proj(x, y)
   return x
+
 def power_iteration(W, u_, update=True, eps=1e-12):
   # Lists holding singular vectors and values
   us, vs, svs = [], [], []
@@ -202,6 +200,7 @@ class SNConv2d(nn.Conv2d, SN):
     return F.conv2d(x, self.W_(), self.bias, self.stride, 
                     self.padding, self.dilation, self.groups)
 
+
 class SegBlock(nn.Module):
     def __init__(self, in_channels, out_channels, con_channels,
                 which_conv=nn.Conv2d, which_linear=None, activation=None, 
@@ -244,6 +243,7 @@ class SegBlock(nn.Module):
             x = self.conv_sc(x)
         return h + x
 
+
 def make_coord(shape, ranges=None, flatten=True):
     """ Make coordinates at grid centers.
     """
@@ -261,6 +261,7 @@ def make_coord(shape, ranges=None, flatten=True):
     if flatten:
         ret = ret.view(-1, ret.shape[-1])
     return ret
+
 
 class Embedder:
     def __init__(self, **kwargs):
@@ -296,6 +297,7 @@ class Embedder:
     def embed(self, inputs):
         return torch.cat([fn(inputs) for fn in self.embed_fns], -1)
 
+
 def get_embedder(multires, i=0):
 
     if i == -1:
@@ -313,6 +315,7 @@ def get_embedder(multires, i=0):
     embedder_obj = Embedder(**embed_kwargs)
     embed = lambda x, eo=embedder_obj : eo.embed(x)
     return embed, embedder_obj.out_dim
+
 
 class Segmodule(nn.Module):
     
@@ -442,4 +445,3 @@ class Segmodule(nn.Module):
         
         
         return high_feat
-   
