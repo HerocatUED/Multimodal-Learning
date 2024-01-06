@@ -12,7 +12,7 @@ from einops import rearrange
 from pytorch_lightning import seed_everything
 from sgm.modules.diffusionmodules.openaimodel import get_feature_dic
 from scripts.demo.turbo import *
-from utils import chunk, plot_mask
+from utils import chunk, plot_mask, get_rand
 from seg_module import Segmodule
 
 
@@ -43,64 +43,64 @@ def main(args):
     os.makedirs(args.outdir, exist_ok=True)
     outpath = args.outdir
     batch_size = args.n_samples
-    precision_scope = autocast if args.precision == "autocast" else nullcontext
+
     assert batch_size == 1 # TODO only batch size==1 . see turbo.py line 126 and sample.py do_sample
     
     with torch.no_grad():
-        with precision_scope("cuda"):
-            prompt = args.prompt
-            trainclass = args.category
-            
-            if not args.from_file:
-                assert prompt is not None
-                data = [batch_size * [prompt]]
+        prompt = args.prompt
+        trainclass = args.category
+        
+        if not args.from_file:
+            assert prompt is not None
+            data = [batch_size * [prompt]]
 
-            else:
-                print(f"reading prompts from {args.from_file}")
-                with open(args.from_file, "r") as f:
-                    data = f.read().splitlines()
-                    data = list(chunk(data, batch_size))
+        else:
+            print(f"reading prompts from {args.from_file}")
+            with open(args.from_file, "r") as f:
+                data = f.read().splitlines()
+                data = list(chunk(data, batch_size))
 
-            sample_path = os.path.join(outpath, "samples")
-            os.makedirs(sample_path, exist_ok=True)
-            
-            for prompts in data:
-                # generate images
-                out = sample(
-                    model, sampler, H=args.H, W=args.W, seed=args.seed, 
-                    prompt=prompts[0], filter=state.get("filter")
-                )
-                img = out[0]
-                
-                Image.fromarray(img).save(f"{sample_path}/{args.prompt}.png")
+        sample_path = os.path.join(outpath, "samples")
+        os.makedirs(sample_path, exist_ok=True)
+        
+        for prompts in data:
 
-                # get class embedding
-                class_embedding, uc = sample(
-                    model, sampler, condition_only=True, H=args.H, W=args.W, seed=args.seed, 
-                    prompt=trainclass, filter=state.get("filter")
-                )
-                class_embedding = class_embedding['crossattn']
-                if class_embedding.size()[1] > 1:
-                    class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
-                class_embedding = class_embedding.repeat(batch_size, 1, 1)
+            # generate images
+            seed = get_rand()
+            out = sample(
+                model, sampler, H=args.H, W=args.W, seed=seed, 
+                prompt=prompts[0], filter=state.get("filter")
+            )
+            img = out[0]
+            Image.fromarray(img).save(f"{sample_path}/{args.prompt}.png")
 
-                # seg_module
-                diffusion_features = get_feature_dic()
-                total_pred_seg = seg_module(diffusion_features, class_embedding)
+            # get class embedding
+            class_embedding, uc = sample(
+                model, sampler, condition_only=True, H=args.H, W=args.W, seed=seed, 
+                prompt=trainclass, filter=state.get("filter")
+            )
+            class_embedding = class_embedding['crossattn']
+            if class_embedding.size()[1] > 1:
+                class_embedding = torch.unsqueeze(class_embedding.mean(1), 1)
+            class_embedding = class_embedding.repeat(batch_size, 1, 1)
 
-                pred_seg = total_pred_seg[0]
-                label_pred_prob = torch.sigmoid(pred_seg)
-                label_pred_mask = torch.zeros_like(label_pred_prob, dtype=torch.float32)
-                label_pred_mask[label_pred_prob > 0.5] = 1
-                annotation_pred = label_pred_mask[0][0].cpu()
+            # seg_module
+            diffusion_features = get_feature_dic()
+            total_pred_seg = seg_module(diffusion_features, class_embedding)
 
-                mask = annotation_pred.numpy()
-                mask = np.expand_dims(mask, 0)
-                done_image_mask = plot_mask(img, mask, alpha=0.9, indexlist=[0])
-                cv2.imwrite(os.path.join(f"{sample_path}/{args.prompt}_mask.png"), done_image_mask)
+            pred_seg = total_pred_seg[0]
+            label_pred_prob = torch.sigmoid(pred_seg)
+            label_pred_mask = torch.zeros_like(label_pred_prob, dtype=torch.float32)
+            label_pred_mask[label_pred_prob > 0.5] = 1
+            annotation_pred = label_pred_mask.cpu()
 
-                torchvision.utils.save_image(annotation_pred, os.path.join(
-                    f"{sample_path}/{args.prompt}_seg.png"), normalize=True, scale_each=True)
+            mask = annotation_pred.numpy()
+            mask = np.expand_dims(mask, 0)
+            done_image_mask = plot_mask(img, mask, alpha=0.9, indexlist=[0])
+            Image.fromarray(done_image_mask.reshape((512, 512, 3))).save(os.path.join(f"{sample_path}/{args.prompt}_mask.png"))
+
+            torchvision.utils.save_image(annotation_pred, os.path.join(
+                f"{sample_path}/{args.prompt}_seg.png"), normalize=True, scale_each=True)
 
 
 if __name__ == "__main__":
@@ -179,13 +179,6 @@ if __name__ == "__main__":
         type=int,
         default=42,
         help="the seed (for reproducible sampling)",
-    )
-    parser.add_argument(
-        "--precision",
-        type=str,
-        help="evaluate at this precision",
-        choices=["full", "autocast"],
-        default="autocast"
     )
     args = parser.parse_args()
     main(args)

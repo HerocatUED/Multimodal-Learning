@@ -18,6 +18,10 @@ def IoU(gt, pred):
     return IoU
 
 
+def get_rand():
+    return torch.randint(high = 2**31, size = 1)
+
+
 def chunk(it, size):
     it = iter(it)
     return iter(lambda: tuple(islice(it, size)), ())

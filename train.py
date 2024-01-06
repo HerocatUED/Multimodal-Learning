@@ -18,7 +18,7 @@ from sgm.modules.diffusionmodules.openaimodel import get_feature_dic
 from pytorch_lightning import seed_everything
 from mmdet.apis import init_detector, inference_detector
 # from inference import init_detector, inference_detector
-from utils import chunk, IoU
+from utils import chunk, IoU, get_rand
 from seg_module import Segmodule
 
 warnings.filterwarnings("ignore")
@@ -112,7 +112,7 @@ def main(args):
     
     batch_size = args.n_samples
     learning_rate = 1e-5
-    total_iter = 50000
+    total_iter = 100000
     g_optim = optim.Adam(
         [{"params": seg_module.parameters()},],
         lr=learning_rate
@@ -152,8 +152,9 @@ def main(args):
             # class_index = class_coco[trainclass]
             
             # generate images
+            seed = get_rand()
             out = sample(
-                model, sampler, H=args.H, W=args.W, seed=args.seed, 
+                model, sampler, H=args.H, W=args.W, seed=seed, 
                 prompt=prompts[0], filter=state.get("filter")
             )
             x_sample_list = [out[0]]
@@ -167,7 +168,7 @@ def main(args):
             
             # get class embedding
             class_embedding, uc = sample(
-                model, sampler, condition_only=True, H=args.H, W=args.W, seed=args.seed, 
+                model, sampler, condition_only=True, H=args.H, W=args.W, seed=seed, 
                 prompt=trainclass, filter=state.get("filter")
             )
             class_embedding = class_embedding['crossattn']

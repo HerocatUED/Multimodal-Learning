@@ -97,7 +97,7 @@ def sample(
     prompt="A lush garden with oversized flowers and vibrant colors, inhabited by miniature animals.",
     H=1024,
     W=1024,
-    seed=0,
+    seed=None,
     filter=None,
     condition_only=False
 ):
