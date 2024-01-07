@@ -19,7 +19,7 @@ def IoU(gt, pred):
 
 
 def get_rand():
-    return torch.randint(high = 2**31, size = 1)
+    return torch.randint(high = 2**31, size = (1,))[0]
 
 
 def chunk(it, size):
