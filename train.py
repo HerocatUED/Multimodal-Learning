@@ -162,10 +162,16 @@ def main(args):
             # detector
             result = inference_detector(pretrain_detector, x_sample_list)
             seg_result_list = []
+            flag = False # detect if mmdet fail to detect the object
             for i in range(len(result)):
                 seg_result = result[i].pred_instances.masks
-                seg_result_list.append(seg_result[0].unsqueeze(0))
-            
+                if len(seg_result) > 0: 
+                    flag = False
+                    seg_result_list.append(seg_result[0].unsqueeze(0))
+                else: 
+                    flag = True
+                    break
+            if flag: continue
             # get class embedding
             class_embedding, uc = sample(
                 model, sampler, condition_only=True, H=args.H, W=args.W, seed=seed, 

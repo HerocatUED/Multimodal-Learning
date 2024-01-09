@@ -202,9 +202,9 @@ class SNConv2d(nn.Conv2d, SN):
 
 
 class SegBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, 
-                which_conv=nn.Conv2d, which_linear=None, 
-                activation=None, upsample=None):
+    def __init__(self, in_channels, out_channels, con_channels,
+                which_conv=nn.Conv2d, which_linear=None, activation=None, 
+                upsample=None):
         super(SegBlock, self).__init__()
         
         self.in_channels, self.out_channels = in_channels, out_channels
@@ -244,97 +244,204 @@ class SegBlock(nn.Module):
         return h + x
 
 
+def make_coord(shape, ranges=None, flatten=True):
+    """ Make coordinates at grid centers.
+    """
+    coord_seqs = []
+    for i, n in enumerate(shape):
+
+        if ranges is None:
+            v0, v1 = -1, 1
+        else:
+            v0, v1 = ranges[i]
+        r = (v1 - v0) / (2 * n)
+        seq = v0 + r + (2 * r) * torch.arange(n).float()
+        coord_seqs.append(seq)
+    ret = torch.stack(torch.meshgrid(*coord_seqs), dim=-1)
+    if flatten:
+        ret = ret.view(-1, ret.shape[-1])
+    return ret
+
+
+class Embedder:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.create_embedding_fn()
+        
+    def create_embedding_fn(self):
+        embed_fns = []
+        d = self.kwargs['input_dims']
+        out_dim = 0
+        if self.kwargs['include_input']:
+            embed_fns.append(lambda x : x)
+            out_dim += d
+            
+        max_freq = self.kwargs['max_freq_log2']
+        N_freqs = self.kwargs['num_freqs']
+        
+        if self.kwargs['log_sampling']:
+            
+            freq_bands = 2.**torch.linspace(0., max_freq, steps=N_freqs).double()
+        else:
+            freq_bands = torch.linspace(2.**0., 2.**max_freq, steps=N_freqs)
+
+        for freq in freq_bands:
+            for p_fn in self.kwargs['periodic_fns']:
+
+                embed_fns.append(lambda x, p_fn=p_fn, freq=freq : p_fn(x.double() * freq))
+                out_dim += d
+                    
+        self.embed_fns = embed_fns
+        self.out_dim = out_dim
+        
+    def embed(self, inputs):
+        return torch.cat([fn(inputs) for fn in self.embed_fns], -1)
+
+
+def get_embedder(multires, i=0):
+
+    if i == -1:
+        return nn.Identity(), 3
+    
+    embed_kwargs = {
+                'include_input' : False,
+                'input_dims' : 2,
+                'max_freq_log2' : multires-1,
+                'num_freqs' : multires,
+                'log_sampling' : True,
+                'periodic_fns' : [torch.sin, torch.cos],
+    }
+    
+    embedder_obj = Embedder(**embed_kwargs)
+    embed = lambda x, eo=embedder_obj : eo.embed(x)
+    return embed, embedder_obj.out_dim
+
+
 class Segmodule(nn.Module):
     
     def __init__(self,
-        embedding_dim = 512,
-        num_heads = 8,
-        num_layers = 2,
-        hidden_dim = 2048,
-        dropout_rate = 0.3):
+        embedding_dim=512,
+        num_heads=8,
+        num_layers=3,
+        hidden_dim=2048,
+        dropout_rate=0):
         super().__init__()
 
         self.low_feature_size = 32
         self.mid_feature_size = 64
         self.high_feature_size = 128
         
-        self.low_feature_conv = nn.Conv2d(1280*5+640, self.low_feature_size, kernel_size=1, bias=False)
-        self.mid_feature_conv = nn.Conv2d(1280+640*4+320, self.mid_feature_size, kernel_size=1, bias=False)
-        self.high_feature_conv = nn.Conv2d(640+320*6, self.high_feature_size, kernel_size=1, bias=False)
-        
+        self.low_feature_conv = nn.Sequential(
+            nn.Conv2d(1280*5+640, self.low_feature_size, kernel_size=1, bias=False),
+
+        )
+        self.mid_feature_conv = nn.Sequential(
+            nn.Conv2d(1280+640*4+320, self.mid_feature_size, kernel_size=1, bias=False),
+
+        )
         self.mid_feature_mix_conv = SegBlock(
                                 in_channels=self.low_feature_size+self.mid_feature_size,
                                 out_channels=self.low_feature_size+self.mid_feature_size,
-                                which_conv=functools.partial(SNConv2d, kernel_size=3, padding=1,num_svs=1, num_itrs=1, eps=1e-04),
-                                which_linear=functools.partial(SNLinear, num_svs=1, num_itrs=1, eps=1e-04),
+                                con_channels=128,
+                                which_conv=functools.partial(SNConv2d,
+                                    kernel_size=3, padding=1,
+                                    num_svs=1, num_itrs=1,
+                                    eps=1e-04),
+                                which_linear=functools.partial(SNLinear,
+                                    num_svs=1, num_itrs=1,
+                                    eps=1e-04),
                                 activation=nn.ReLU(inplace=True),
                                 upsample=False,
                             )
+        self.high_feature_conv = nn.Sequential(
+            nn.Conv2d(640+320*6, self.high_feature_size, kernel_size=1, bias=False),
+        )
         self.high_feature_mix_conv = SegBlock(
                                 in_channels=self.low_feature_size+self.mid_feature_size+self.high_feature_size,
                                 out_channels=self.low_feature_size+self.mid_feature_size+self.high_feature_size,
-                                which_conv=functools.partial(SNConv2d, kernel_size=3, padding=1, num_svs=1, num_itrs=1, eps=1e-04),
-                                which_linear=functools.partial(SNLinear, num_svs=1, num_itrs=1, eps=1e-04),
+                                con_channels=128,
+                                which_conv=functools.partial(SNConv2d,
+                                    kernel_size=3, padding=1,
+                                    num_svs=1, num_itrs=1,
+                                    eps=1e-04),
+                                which_linear=functools.partial(SNLinear,
+                                    num_svs=1, num_itrs=1,
+                                    eps=1e-04),
                                 activation=nn.ReLU(inplace=True),
                                 upsample=False,
                             )
         
-        self.input_mlp = MLP(2048, embedding_dim*2, embedding_dim, 3)
-        self.output_mlp = MLP(embedding_dim, embedding_dim*2, self.low_feature_size+self.mid_feature_size+self.high_feature_size, 3)
-
-        query_dim = [512, 1024, 2048] # hard-code parameters according to pretrained diffusion models
-        self.to_k = nn.ModuleList([nn.Linear(query_dim[i], embedding_dim, bias=False) for i in range(3)])
-        self.to_q = nn.ModuleList([nn.Linear(embedding_dim, embedding_dim, bias=False) for _ in range(3)])
-        
+        feature_dim=self.low_feature_size + self.mid_feature_size + self.high_feature_size
+        query_dim=feature_dim*16
         decoder_layer = TransformerDecoderLayer(embedding_dim, num_heads, hidden_dim, dropout_rate)
-        self.transfromer_decoder = nn.ModuleList([TransformerDecoder(decoder_layer, num_layers) for _ in range(3)])
+        self.transfromer_decoder = TransformerDecoder(decoder_layer, num_layers)
+        self.mlp = MLP(embedding_dim, embedding_dim, feature_dim, 3)
         
+        context_dim=2048
+        self.to_k = nn.Linear(query_dim, embedding_dim, bias=False)
+        self.to_q = nn.Linear(context_dim, embedding_dim, bias=False)
         
-    def forward(self, diffusion_feature, text_embedding):
+    def forward(self,diffusion_feature,text_embedding):
+
+        image_feature=self._prepare_features(diffusion_feature) # 1, 240, 64, 64
+
+        final_image_feature=F.interpolate(image_feature, size=512, mode='bilinear', align_corners=False) # 1, 240, 512, 512
+        b=final_image_feature.size()[0]
+
+        patch_size = 4
+
+        image_feature = torch.nn.functional.unfold(image_feature, patch_size, stride=patch_size).transpose(1,2).contiguous()
+        # now is 1, 256, 3840
+        image_feature=rearrange(image_feature, 'b n d -> (b n) d  ')  # 256, 3840
+        text_embedding=rearrange(text_embedding, 'b n d -> (b n) d  ') # 1, 768
+
+        q = self.to_q(text_embedding) # 1, 512
+        k = self.to_k(image_feature) # 256, 512
         
-        low_features, mid_features, high_features, final_feat = self._prepare_features(diffusion_feature)
-        features = [low_features, mid_features, high_features]
+        output_query = self.transfromer_decoder(q, k, None) # 1, 512
         
-        batch_size = features[0].size()[0]
-        patch_size = 4 # the same as ViT
-        text_embedding = rearrange(text_embedding, 'b n d -> (b n) d  ')
-        output_query = self.input_mlp(text_embedding)
+        output_query=rearrange(output_query, '(b n) d -> b n d',b=b)  # 1, 1, 512
         
-        for i, image_feature in enumerate(features):
-            # patch partition
-            image_feature = torch.nn.functional.unfold(image_feature, patch_size, stride=patch_size).transpose(1,2).contiguous()
-            image_feature = rearrange(image_feature, 'b n d -> (b n) d  ')
-            # transformer block
-            q = self.to_q[i](output_query)
-            k = self.to_k[i](image_feature)
-            output_query = self.transfromer_decoder[i](q, k, None)
+        mask_embedding=self.mlp(output_query) # 1, 1, 240
+        seg_result=einsum('b d h w, b n d -> b n h w', final_image_feature, mask_embedding)
         
-        output_query = rearrange(output_query, '(b n) d -> b n d', b=batch_size)
-        mask_embedding = self.output_mlp(output_query)
-        seg_result = einsum('b d h w, b n d -> b n h w', final_feat, mask_embedding)
-        
-        return seg_result
+        return seg_result # 1, 1, 512, 512
     
     def _prepare_features(self, features, upsample='bilinear'):
-        
-        low_features = [F.interpolate(i, size=self.low_feature_size, mode=upsample, align_corners=False) for i in features["low"]]
+        low_features = [
+            F.interpolate(i, size=self.low_feature_size, mode=upsample, align_corners=False) for i in features["low"]
+        ]
         low_features = torch.cat(low_features, dim=1)
-        mid_features = [F.interpolate(i, size=self.mid_feature_size, mode=upsample, align_corners=False) for i in features["mid"]]
+        
+        mid_features = [
+             F.interpolate(i, size=self.mid_feature_size, mode=upsample, align_corners=False) for i in features["mid"]
+        ]
         mid_features = torch.cat(mid_features, dim=1)
-        high_features = [F.interpolate(i, size=self.high_feature_size, mode=upsample, align_corners=False) for i in features["high"]]
+        
+        high_features = [
+             F.interpolate(i, size=self.high_feature_size, mode=upsample, align_corners=False) for i in features["high"]
+        ]
         high_features = torch.cat(high_features, dim=1)
         
-        low_features = self.low_feature_conv(low_features) # batch_size, 32, 32, 32
-        low_feat = F.interpolate(low_features, size=self.mid_feature_size, mode='bilinear', align_corners=False)
-        # low_feat batch_size, 32, 64, 64
-        mid_features = self.mid_feature_conv(mid_features) # batch_size, 64, 64, 64
-        mid_feat = torch.cat([low_feat, mid_features], dim=1) # batch_size, 96, 64, 64
-        mid_feat = self.mid_feature_mix_conv(mid_feat, y=None) # batch_size, 96, 64, 64
-        mid_feat = F.interpolate(mid_feat, size=self.high_feature_size, mode='bilinear', align_corners=False)
-        # mid_feat batch_size, 96, 128, 128
-        high_features = self.high_feature_conv(high_features) # batch_size, 128, 128, 128
-        high_feat = torch.cat([mid_feat, high_features], dim=1) # batch_size, 224, 128, 128 
-        final_feat = self.high_feature_mix_conv(high_feat, y=None) # batch_size, 224, 128, 128 
-        final_feat=F.interpolate(final_feat, size=512, mode='bilinear', align_corners=False) # batch_size, 224, 512, 512
+
+        features_dict = {
+            'low': low_features,
+            'mid': mid_features,
+            'high': high_features,
+        }
         
-        return low_features, mid_features, high_features, final_feat
+        # take batch size == 1 as example
+        low_feat = self.low_feature_conv(features_dict['low']) # 1, 32, 32, 32
+        low_feat = F.interpolate(low_feat, size=self.mid_feature_size, mode='bilinear', align_corners=False)
+        # low_feat 1, 32, 64, 64
+        mid_feat = self.mid_feature_conv(features_dict['mid']) # 1, 64, 64, 64
+        mid_feat = torch.cat([low_feat, mid_feat], dim=1) # 1, 96, 64, 64
+        mid_feat = self.mid_feature_mix_conv(mid_feat, y=None) # 1, 96, 64, 64
+        mid_feat = F.interpolate(mid_feat, size=self.high_feature_size, mode='bilinear', align_corners=False)
+        # mid_feat 1, 96, 128, 128
+        high_feat = self.high_feature_conv(features_dict['high']) # 1, 128, 128, 128
+        high_feat = torch.cat([mid_feat, high_feat], dim=1) # 1, 224, 128, 128 
+        high_feat = self.high_feature_mix_conv(high_feat, y=None) # 1, 224, 128, 128 
+        
+        
+        return high_feat
