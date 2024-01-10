@@ -112,7 +112,7 @@ def main(args):
     
     batch_size = args.n_samples
     learning_rate = 1e-5
-    total_iter = 100000
+    total_iter = 10000
     g_optim = optim.Adam(
         [{"params": seg_module.parameters()},],
         lr=learning_rate
@@ -171,7 +171,10 @@ def main(args):
                 else: 
                     flag = True
                     break
-            if flag: continue
+            if flag:
+                print("pretrain detector fail to detect the object in the class:", trainclass) 
+                continue
+            
             # get class embedding
             class_embedding, uc = sample(
                 model, sampler, condition_only=True, H=args.H, W=args.W, seed=seed, 

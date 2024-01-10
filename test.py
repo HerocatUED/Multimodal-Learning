@@ -66,6 +66,7 @@ def main(args):
         for prompts in data:
 
             # generate images
+            # seed = args.seed
             seed = get_rand()
             out = sample(
                 model, sampler, H=args.H, W=args.W, seed=seed, 
@@ -97,6 +98,8 @@ def main(args):
             mask = annotation_pred.numpy()
             mask = np.expand_dims(mask, 0)
             done_image_mask = plot_mask(img, mask, alpha=0.9, indexlist=[0])
+            
+            print(f"saving to {sample_path}")
             Image.fromarray(done_image_mask.reshape((512, 512, 3))).save(os.path.join(f"{sample_path}/{args.prompt}_mask.png"))
 
             torchvision.utils.save_image(annotation_pred, os.path.join(

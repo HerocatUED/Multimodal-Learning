@@ -10,9 +10,10 @@ TODO List：
 - [x] Clean the code base
 - [x] Try up-to-date stable diffusion models(we modified the whole code base)
 - [x] Explorey frozen word embeddings
-- [ ] Modify fusion module with advanced techniques
+- [x] Modify fusion module with advanced techniques
 - [ ] Check training classes, remove those mmdet can't segment
 - [ ] Build prompts, not always "a photography of ..." 
+- [ ] Batch Size Problem
 - [ ] Optional: Try segment a given image rather than segment generated images. 
 
 ## Requirements
