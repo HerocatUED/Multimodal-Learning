@@ -249,18 +249,22 @@ class Segmodule(nn.Module):
     def __init__(self,
         embedding_dim = 512,
         num_heads = 8,
-        num_layers = 2,
+        num_layers = 3,
         hidden_dim = 2048,
         dropout_rate = 0.3):
         super().__init__()
-
+        
+        # output image size will be (embedding_dim, embedding_dim) 
+        self.embedding_dim = embedding_dim 
         self.low_feature_size = 32
         self.mid_feature_size = 64
         self.high_feature_size = 128
+        self.final_feature_size = 256
         
         self.low_feature_conv = nn.Conv2d(1280*5+640, self.low_feature_size, kernel_size=1, bias=False)
         self.mid_feature_conv = nn.Conv2d(1280+640*4+320, self.mid_feature_size, kernel_size=1, bias=False)
         self.high_feature_conv = nn.Conv2d(640+320*6, self.high_feature_size, kernel_size=1, bias=False)
+
         
         self.mid_feature_mix_conv = SegBlock(
                                 in_channels=self.low_feature_size+self.mid_feature_size,
@@ -278,11 +282,19 @@ class Segmodule(nn.Module):
                                 activation=nn.ReLU(inplace=True),
                                 upsample=False,
                             )
+        self.final_feature_conv = SegBlock(
+                                in_channels=self.low_feature_size+self.mid_feature_size+self.high_feature_size,
+                                out_channels=self.final_feature_size,
+                                which_conv=functools.partial(SNConv2d, kernel_size=3, padding=1, num_svs=1, num_itrs=1, eps=1e-04),
+                                which_linear=functools.partial(SNLinear, num_svs=1, num_itrs=1, eps=1e-04),
+                                activation=nn.ReLU(inplace=True),
+                                upsample=False,
+                            )
         
         self.input_mlp = MLP(2048, embedding_dim*2, embedding_dim, 3)
-        self.output_mlp = MLP(embedding_dim, embedding_dim*2, self.low_feature_size+self.mid_feature_size+self.high_feature_size, 3)
+        self.output_mlp = MLP(embedding_dim, embedding_dim*2, self.final_feature_size, 3)
 
-        query_dim = [512, 1024, 2048] # hard-code parameters according to pretrained diffusion models
+        query_dim = [16*32, 16*96, 16*224] # hard-code parameters according to pretrained diffusion models
         self.to_k = nn.ModuleList([nn.Linear(query_dim[i], embedding_dim, bias=False) for i in range(3)])
         self.to_q = nn.ModuleList([nn.Linear(embedding_dim, embedding_dim, bias=False) for _ in range(3)])
         
@@ -334,7 +346,10 @@ class Segmodule(nn.Module):
         # mid_feat batch_size, 96, 128, 128
         high_features = self.high_feature_conv(high_features) # batch_size, 128, 128, 128
         high_feat = torch.cat([mid_feat, high_features], dim=1) # batch_size, 224, 128, 128 
-        final_feat = self.high_feature_mix_conv(high_feat, y=None) # batch_size, 224, 128, 128 
-        final_feat=F.interpolate(final_feat, size=512, mode='bilinear', align_corners=False) # batch_size, 224, 512, 512
-        
-        return low_features, mid_features, high_features, final_feat
+        high_feat = self.high_feature_mix_conv(high_feat, y=None) # batch_size, 224, 128, 128 
+        high_feat = F.interpolate(high_feat, size=self.high_feature_size*2, mode='bilinear', align_corners=False)
+        # high_feat batch_size, 224, 256, 256
+        final_feat = self.final_feature_conv(high_feat, y=None) # batch_size, 256, 256, 256
+        final_feat = F.interpolate(final_feat, size=self.embedding_dim, mode='bilinear', align_corners=False)
+        # batch_size, 256, 512, 512
+        return low_feat, mid_feat, high_feat, final_feat

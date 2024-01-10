@@ -5,7 +5,7 @@ import PIL
 import torchvision
 import torch
 import warnings
-
+import time
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
@@ -133,6 +133,7 @@ def main(args):
     assert batch_size == 1 # TODO only batch size==1 . see turbo.py line 126 and sample.py do_sample
 
     # iou = 0
+    t1 = time.time() 
     for j in range(total_iter):
         print('Iter ' + str(j) + '/' + str(total_iter))
         if not args.from_file:
@@ -235,6 +236,9 @@ def main(args):
             print("Saving latest checkpoint to",ckpt_dir)
             torch.save(seg_module.state_dict(), os.path.join(ckpt_dir, 'checkpoint_'+str(j)+'.pth'))
     
+    t2 = time.time()
+    t = t2 - t1
+    print(f"Time: {t//3600}h {t%3600//60}min")
     # print(iou/total_epoch)
     # with open('tmp/ious.txt', "a") as f:
     #     f.write(str(iou/total_epoch)+'\n')
